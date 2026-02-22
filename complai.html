@@ -873,7 +873,7 @@ function renderDetail(cls, rm, ip, opt) {
     ${rm.data_gap_analysis?`
     <div>
       <div class="sec-label">Data gap analysis</div>
-      <div class="rationale-card">${rm.data_gap_analysis}</div>
+      <div class="rationale-card">${rm.data_gap_analysis.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/### ?(.*?)(\n|$)/g,'<h4 style="font-size:.8rem;margin:.4rem 0 .15rem">$1</h4>').replace(/## ?(.*?)(\n|$)/g,'<h3 style="font-size:.85rem;margin:.5rem 0 .2rem">$1</h3>').replace(/\n/g,'<br>')}</div>
     </div>`:''}
   `;
 }

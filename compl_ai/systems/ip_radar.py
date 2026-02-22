@@ -6,7 +6,7 @@ and returns plain-language relevance explanations with traffic-light ratings.
 
 Architecture:
   1. Generate diverse search queries from the product profile
-  2. Query USPTO PatentsView API and Google Patents Data API in parallel
+  2. Query USPTO PatentsView API (v1) in parallel across queries
   3. Deduplicate results
   4. Run each patent through an LLM relevance assessment
   5. Assign traffic-light flags and generate a plain-English IP landscape summary
@@ -15,31 +15,37 @@ THIS IS NOT A FREEDOM-TO-OPERATE (FTO) TOOL.
 This tool provides prior art radar to flag patents that should be reviewed
 by a registered patent attorney. It does not and cannot provide legal advice.
 
+FIXES in v1.1:
+  - Old endpoint (api.patentsview.org/patents/query) returned HTTP 410 Gone —
+    it has been retired. Updated to new PatentSearch API v1:
+    https://search.patentsview.org/api/v1/patent/
+  - Updated query syntax: new API uses GET with URL-encoded q parameter,
+    and pagination uses "size" instead of "per_page".
+  - Updated field names to match v1 response schema:
+    patent_title → patent_title (unchanged)
+    patent_abstract → patent_abstract (unchanged)
+    assignee_organization → assignees.assignee_organization (nested)
+    app_date → applications.app_date (nested)
+  - Updated response parsing to match new nested structure.
+
 NEXT STEPS:
   - Add semantic patent search via Semantic Scholar or the
-    USPTO Patent Examination Data System (PEDS). These provide richer
-    structured data than the PatentsView API.
-  - Add claim-level parsing: the current implementation uses patent abstracts.
-    For production, fetch and parse the full claim text (independent claims
-    especially) for more accurate relevance scoring. The USPTO bulk data
-    provides XML claim text.
-  - Add continuation/family tracking: flag when a patent has active
-    continuations or divisionals, since those may have broader or different claims.
-  - Add prosecution history lookup (file wrapper): knowing if a patent
-    narrowed its claims during prosecution is critical for FTO analysis.
-  - For a premium tier, integrate with a commercial patent database
-    (Derwent, PatSnap, Lens.org) for better coverage and analytics.
-  - Add a "design around" feature: given a flagged patent, ask the LLM
-    to suggest product design modifications that might avoid the patent claims.
-  - Add expiration date calculation: most patent APIs return filing/grant dates,
-    not expiration. Implement the calculation (20 years from priority date,
-    minus any terminal disclaimers, plus any patent term adjustments).
+    USPTO Patent Examination Data System (PEDS).
+  - Add claim-level parsing: fetch and parse full claim text (independent
+    claims especially) for more accurate relevance scoring.
+  - Add continuation/family tracking.
+  - Add prosecution history lookup (file wrapper).
+  - For a premium tier, integrate with Derwent, PatSnap, or Lens.org.
+  - Add a "design around" feature.
+  - Add expiration date calculation (20 years from priority date,
+    minus terminal disclaimers, plus patent term adjustments).
 """
 
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
+import urllib.parse
 from typing import Optional
 
 import httpx
@@ -54,8 +60,8 @@ from utils.models import (
 
 logger = logging.getLogger(__name__)
 
-PATENTSVIEW_API = "https://api.patentsview.org/patents/query"
-GOOGLE_PATENTS_API = "https://patents.googleapis.com/v1/patents"
+# Updated to PatentSearch API v1 (old api.patentsview.org endpoint is 410 Gone)
+PATENTSVIEW_API = "https://search.patentsview.org/api/v1/patent/"
 
 MAX_PATENTS_TO_ANALYZE = 8    # LLM calls are expensive; cap the deep analysis
 MAX_SEARCH_RESULTS = 15       # Raw results to fetch before LLM ranking
@@ -118,45 +124,76 @@ def generate_search_queries(profile: ProductProfile) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Step 2: Patent fetching
+# Step 2: Patent fetching  (PatentSearch API v1)
 # ---------------------------------------------------------------------------
 
 def _search_patentsview(query: str, limit: int = 10) -> list[dict]:
     """
-    Query the PatentsView API (USPTO data).
-    PatentsView uses a JSON query syntax.
+    Query the PatentsView PatentSearch API v1.
 
-    NEXT STEPS: Add field:patent_date filter to focus on patents filed
-    in the last 20 years (anything older is expired). Also filter by
-    CPC classification codes relevant to the device type.
+    New API (search.patentsview.org/api/v1/patent/) uses:
+      - GET requests with URL-encoded q parameter
+      - "size" for result count (not "per_page")
+      - "_contains" operator for full-text search on string fields
+      - Nested objects for assignees and applications
+
+    Filters to patents granted after 2004 to focus on potentially active ones.
+    No API key required for the v1 public endpoint.
     """
-    payload = {
-        "q": {"_text_any": {"patent_abstract": query}},
-        "f": [
-            "patent_number", "patent_title", "patent_abstract",
-            "assignee_organization", "patent_date", "app_date",
-        ],
-        "o": {"per_page": limit},
+    query_obj = {
+        "_and": [
+            {"_contains": {"patent_abstract": query}},
+            {"_gte": {"patent_date": "2004-01-01"}},  # Focus on potentially active patents
+        ]
+    }
+
+    fields = [
+        "patent_id",
+        "patent_title",
+        "patent_abstract",
+        "patent_date",
+        "assignees.assignee_organization",
+        "applications.app_date",
+    ]
+
+    params = {
+        "q": json.dumps(query_obj),
+        "f": json.dumps(fields),
+        "o": json.dumps({"size": limit}),
     }
 
     try:
-        with httpx.Client(timeout=15.0) as client:
-            response = client.post(PATENTSVIEW_API, json=payload)
+        with httpx.Client(timeout=20.0) as client:
+            response = client.get(PATENTSVIEW_API, params=params)
             response.raise_for_status()
             data = response.json()
             return data.get("patents") or []
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            "PatentsView API HTTP error for query '%s': %s — %s",
+            query, e.response.status_code, e.response.text[:200],
+        )
+        return []
     except Exception as e:
         logger.warning("PatentsView API error for query '%s': %s", query, e)
         return []
 
 
 def _normalize_patentsview_result(raw: dict) -> dict:
-    """Normalise PatentsView result into our common patent dict format."""
-    assignee_orgs = raw.get("assignees") or []
-    assignee = assignee_orgs[0].get("assignee_organization", "Unknown") if assignee_orgs else "Unknown"
+    """
+    Normalise PatentsView v1 result into our common patent dict format.
 
-    app_dates = raw.get("applications") or []
-    app_date = app_dates[0].get("app_date", "") if app_dates else ""
+    v1 nests assignees and applications as lists of objects, unlike the
+    old flat structure. Field name is also patent_id (not patent_number)
+    in v1, though we expose it as patent_number for consistency downstream.
+    """
+    # Assignees is a nested list in v1
+    assignees = raw.get("assignees") or []
+    assignee = assignees[0].get("assignee_organization", "Unknown") if assignees else "Unknown"
+
+    # Application date is nested
+    applications = raw.get("applications") or []
+    app_date = applications[0].get("app_date", "") if applications else ""
 
     patent_date = raw.get("patent_date", "")
 
@@ -169,14 +206,15 @@ def _normalize_patentsview_result(raw: dict) -> dict:
             pass
 
     return {
-        "patent_number": raw.get("patent_number", ""),
+        # v1 uses "patent_id" — expose as patent_number for consistency
+        "patent_number": raw.get("patent_id", ""),
         "title": raw.get("patent_title", ""),
         "abstract": raw.get("patent_abstract", ""),
         "assignee": assignee,
         "filing_date": app_date,
         "grant_date": patent_date,
         "expiration_date": expiration,
-        "source": "patentsview",
+        "source": "patentsview_v1",
     }
 
 
@@ -188,7 +226,8 @@ def fetch_patents_for_queries(queries: list[str]) -> list[dict]:
     seen_numbers: set[str] = set()
 
     for query in queries:
-        raw_results = _search_patentsview(query, limit=MAX_SEARCH_RESULTS // len(queries) + 2)
+        per_query_limit = max(3, MAX_SEARCH_RESULTS // len(queries) + 2)
+        raw_results = _search_patentsview(query, limit=per_query_limit)
         for raw in raw_results:
             normalized = _normalize_patentsview_result(raw)
             num = normalized["patent_number"]
@@ -268,11 +307,9 @@ def _is_patent_active(patent: dict, relevance_data: dict) -> bool:
     Determine if a patent is likely still active.
     Uses LLM's assessment + expiration date estimate.
     """
-    # Trust the LLM's assessment first
     if not relevance_data.get("is_likely_active", True):
         return False
 
-    # Check expiration estimate
     expiration = patent.get("expiration_date", "")
     if expiration and len(expiration) >= 4:
         try:
@@ -375,7 +412,7 @@ def run_ip_radar(profile: ProductProfile) -> IPRadarResult:
             ),
         )
 
-    # Step 3 & 4: Assess relevance for top patents
+    # Step 3: Assess relevance for top patents
     analyzed_patents: list[PatentResult] = []
     for raw in raw_patents[:MAX_PATENTS_TO_ANALYZE]:
         relevance_data = assess_patent_relevance(raw, profile.raw_description)
@@ -401,7 +438,7 @@ def run_ip_radar(profile: ProductProfile) -> IPRadarResult:
     sort_order = {PatentRelevance.RED: 0, PatentRelevance.YELLOW: 1, PatentRelevance.GREEN: 2}
     analyzed_patents.sort(key=lambda p: sort_order[p.relevance])
 
-    # Step 5: Generate summary
+    # Step 4: Generate summary
     summary = generate_ip_summary(profile, analyzed_patents)
 
     return IPRadarResult(

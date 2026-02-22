@@ -5,7 +5,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy dependency file first (better layer caching)
-COPY compl_ai/requirements.txt
+COPY compl_ai/requirements.txt ./requirements.txt
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt

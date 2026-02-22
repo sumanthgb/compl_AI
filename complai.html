@@ -642,6 +642,8 @@ async function sendMsg() {
   S.msgs.push({role:'user', content:text});
   S.turns++;
   S.ctx = parseCtx(text);
+  const readySignals = /\b(that'?s? (it|all|everything)|let'?s? (go|start|run|map)|analyze|sounds good|yes|yep|correct|proceed|go ahead|map it)\b/i;
+  if (readySignals.test(text)) S.ctx.ready = true;
   document.getElementById('quickOpts').innerHTML = '';
   showTyping();
   await wait(650);
@@ -657,7 +659,8 @@ async function sendMsg() {
     aiReply('Thanks! Is this primarily for treating or repairing something, detecting something, or both?',
       ['Treating or repairing', 'Detecting or measuring', 'Both']);
   } else {
-    aiReply('Could you tell me a bit more about the materials or how it interacts with the body?');
+    aiReply('Could you tell me a bit more about the materials or how it interacts with the body?',
+      ['That\'s all I know — map it anyway', 'It\'s an implant', 'It doesn\'t contact the body']);
   }
 }
 

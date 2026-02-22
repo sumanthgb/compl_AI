@@ -1,52 +1,90 @@
 """
-System 2: Testing Roadmap Generator  (v2 — ISO 10993-1:2018 / FDA 2023 Guidance)
-===================================================================================
+System 2: Testing Roadmap Generator  (v2.1 — ISO 10993-1:2018 / FDA 2023 Guidance)
+=====================================================================================
 Generates a sequenced, DAG-based testing roadmap fully aligned with:
   - ISO 10993-1:2018 (biological evaluation standard)
   - FDA Guidance on ISO 10993-1 (2023 update)
   - FDA Modified Biocompatibility Matrix (Attachment A of 2023 guidance)
 
-KEY DESIGN DECISIONS derived from the document comparison (see uploaded PDF):
+FIXES IN v2.1 (relative to v2):
+
+  FIX 1 & 2 — Broken prerequisites for ISO_10993_5, ISO_10993_10_SENS, ISO_10993_10_IRR,
+               and ISO_10993_3_GENO on EC/implant devices.
+               These nodes hardcoded "CHEM_CHAR_SCREENING" as their prerequisite, but
+               EC/implant devices only get CHEM_CHAR_FULL — CHEM_CHAR_SCREENING is
+               discarded from active_ids. This left those nodes as orphaned roots with
+               no chemical characterization gate.
+               Fix: _build_test_nodes now resolves prerequisites against whichever
+               chem char tier is actually active in the current test set.
+
+  FIX 3 — Blood-contact keyword list in _get_matrix_keys was missing common clinical
+           terms: "pacemaker", "defibrillator", "icd", "catheter", "hemodialysis",
+           "lvad", "ventricular assist". The pacemaker example is the one the FDA
+           explicitly uses in Section 4C of the guidance document.
+
+  FIX 4 — CRITICAL Python bug: has_absorbable, has_nano, has_novel_material flags all
+           used bool(generator_expression), which is ALWAYS True in Python because a
+           generator object is always truthy regardless of whether it yields anything.
+           This caused DEGRADATION_ASSESS, NANO_CHAR, and novel-material waiver-removal
+           to fire on every single device. Fixed to use any().
+
+  FIX 5 — surface/permanent matrix cell incorrectly included ISO_10993_3_CARCINO.
+           FDA Section 6G states carcinogenicity applies to "breached or compromised
+           surfaces, external communicating, or implant" — NOT intact skin.
+           The surface category has been split into surface_intact (skin/mucosal) and
+           surface_breached (breached/compromised surface). Carcinogenicity only appears
+           in surface_breached/permanent and above.
+           _get_matrix_keys updated to accept an optional surface_subtype hint.
+
+  FIX 6 — ISO_10993_3_GENO had CHEM_CHAR_FULL hardcoded as its prerequisite, but
+           surface/permanent devices only get CHEM_CHAR_SCREENING. Same orphaned-node
+           problem as Fix 1/2. Resolved by the same dynamic prerequisite resolution.
+
+  FIX 7 — Attachment G (FDA 2023 — intact skin low-burden materials) noted as a
+           NEXT STEPS stub. Not yet modelled as a test node, but the surface_intact
+           split in Fix 5 creates the correct foundation for it.
+
+  FIX 8 — is_ivd flag used fragile string comparison
+           (classification.product_category.value == "diagnostic_ivd").
+           Now uses direct enum member comparison:
+           classification.product_category == ProductCategory.DIAGNOSTIC_IVD
+
+KEY DESIGN DECISIONS (unchanged from v2):
 
 1.  CONTACT MATRIX IS THE PRIMARY FILTER
     Every biocompatibility test is driven by (contact_category × contact_duration).
-    The document's Table A.1 (FDA modified matrix) is encoded as ENDPOINT_MATRIX.
+    ENDPOINT_MATRIX encodes FDA Attachment A / ISO Table A.1.
 
 2.  FDA REQUIRES MULTIPLE CONTACT CATEGORIES FOR COMPLEX DEVICES (FDA Section 4C)
     A pacemaker = subcutaneous implant + intravascular leads → both evaluated independently.
 
 3.  RISK ASSESSMENT IS THE MANDATORY GATEWAY (FDA Section 3D, 4D)
-    Must appear at the start of every biocompatibility submission section. Not waivable.
 
-4.  CHEMICAL CHARACTERIZATION IS ALWAYS REQUIRED FOR EC/IMPLANT (FDA Section 4D, 7)
-    ISO 10993-18 full chem char cannot be waived for novel materials. Two tiers: screening (surface)
-    and full analytical (EC/implant).
+4.  CHEMICAL CHARACTERIZATION TWO TIERS (FDA Section 4D, 7)
+    CHEM_CHAR_SCREENING for surface; CHEM_CHAR_FULL for EC/implant. Mutually exclusive.
 
 5.  NOVEL MATERIAL FLAG REMOVES ALL WAIVERS AND ADDS TESTS (FDA Section 6)
-    Novel materials → GPMT mandatory, in vivo genotoxicity required, carcinogenicity SAR needed.
 
 6.  PROLONGED/PERMANENT CONTACT UNLOCKS ADDITIONAL ENDPOINTS (FDA Matrix, Attachment A)
-    Subacute/subchronic → prolonged; chronic + carcinogenicity + repro → permanent.
 
 7.  HEMOCOMPATIBILITY HAS TWO TRACKS (FDA Section 6C)
-    Direct blood: hemolysis (direct+indirect), complement (SC5b-9 ELISA, direct study),
-    thrombogenicity (in vivo). Indirect: hemolysis extract method only.
 
-8.  SENSITIZATION = TWO MANDATED TESTS (FDA Section 6B)
-    GPMT + LLNA both evaluated. GPMT mandatory for novel materials. LLNA not for nickel alloys.
+8.  SENSITIZATION = GPMT + LLNA BOTH EVALUATED (FDA Section 6B)
 
 9.  GENOTOXICITY = THREE-PART BATTERY (FDA Section 6F)
-    Ames + MLA (preferred)/chromosomal aberration + in vivo cytogenetics (novel/extracorporeal).
 
-10. ABSORBABLE MATERIALS → DEGRADATION STUDIES WITH FDA PRE-DISCUSSION (FDA Section 5B, 6I)
+10. ABSORBABLE MATERIALS → DEGRADATION STUDIES + PRE-FDA DISCUSSION (FDA 5B, 6I)
 
 11. PYROGENICITY IS SEPARATE FROM STERILITY (FDA Section 6D)
 
-12. IVD DEVICES: ANALYTICAL PERFORMANCE REPLACES BIOCOMPATIBILITY
+12. IVD: ANALYTICAL PERFORMANCE REPLACES BIOCOMPATIBILITY
 
-13. CBER / CELL-GENE THERAPY: ENTIRELY SEPARATE TESTING TRACK
+13. CBER / CELL-GENE THERAPY: ENTIRELY SEPARATE TRACK
 
 NEXT STEPS:
+  - Implement Attachment G low-burden intact skin track (FDA 2023 Attachment G).
+    Foundation: surface_intact split now in place. Need to add material lookup against
+    FDA's approved low-biocompatibility-risk list and generate appropriate waiver node.
   - Move MASTER_TEST_LIBRARY and ENDPOINT_MATRIX to PostgreSQL; version them.
   - Add EU MDR / EN ISO 10993 pathway with side-by-side comparison mode.
   - Upgrade critical path to proper CPM with float calculation.
@@ -80,6 +118,18 @@ logger = logging.getLogger(__name__)
 # FDA MODIFIED BIOCOMPATIBILITY ENDPOINT MATRIX  (Attachment A, FDA 2023)
 # ===========================================================================
 # Structure: ENDPOINT_MATRIX[contact_category_key][duration_key] = set of test IDs
+#
+# FIX 5: "surface" is now split into two keys:
+#   "surface_intact"   — intact skin and mucosal membrane contact
+#   "surface_breached" — breached / compromised surface contact
+#
+# Rationale: FDA Section 6G states carcinogenicity applies to "breached or
+# compromised surfaces, external communicating, or implant" — NOT intact skin.
+# ISO 10993-1 Section 5.2.2 defines these as distinct sub-categories.
+# Attachment G (FDA 2023) further treats intact skin as a lower-burden category.
+#
+# _get_matrix_keys() returns "surface_breached" when the device description
+# explicitly mentions breached/compromised/wound contact; otherwise "surface_intact".
 
 DURATION_KEY = {
     ContactDuration.LIMITED: "limited",
@@ -89,7 +139,8 @@ DURATION_KEY = {
 
 ENDPOINT_MATRIX: dict[str, dict[str, set[str]]] = {
 
-    "surface": {
+    # ---- Intact skin / mucosal membrane ----
+    "surface_intact": {
         "limited": {
             "RISK_ASSESSMENT", "CHEM_CHAR_SCREENING",
             "ISO_10993_5", "ISO_10993_10_SENS", "ISO_10993_10_IRR",
@@ -103,10 +154,35 @@ ENDPOINT_MATRIX: dict[str, dict[str, set[str]]] = {
             "RISK_ASSESSMENT", "CHEM_CHAR_SCREENING",
             "ISO_10993_5", "ISO_10993_10_SENS", "ISO_10993_10_IRR",
             "ISO_10993_11_ACUTE", "ISO_10993_11_SUBACUTE",
-            "ISO_10993_3_GENO", "ISO_10993_3_CARCINO",
+            # NOTE: ISO_10993_3_GENO is listed here but its prerequisite is
+            # dynamically resolved at build time (Fix 6) — it will correctly
+            # point to CHEM_CHAR_SCREENING for this category.
+            "ISO_10993_3_GENO",
+            # No carcinogenicity for intact skin (FDA Section 6G — Fix 5)
         },
     },
 
+    # ---- Breached / compromised surface ----
+    "surface_breached": {
+        "limited": {
+            "RISK_ASSESSMENT", "CHEM_CHAR_SCREENING",
+            "ISO_10993_5", "ISO_10993_10_SENS", "ISO_10993_10_IRR",
+        },
+        "prolonged": {
+            "RISK_ASSESSMENT", "CHEM_CHAR_SCREENING",
+            "ISO_10993_5", "ISO_10993_10_SENS", "ISO_10993_10_IRR",
+            "ISO_10993_11_ACUTE",
+        },
+        "permanent": {
+            "RISK_ASSESSMENT", "CHEM_CHAR_SCREENING",
+            "ISO_10993_5", "ISO_10993_10_SENS", "ISO_10993_10_IRR",
+            "ISO_10993_11_ACUTE", "ISO_10993_11_SUBACUTE",
+            "ISO_10993_3_GENO",
+            "ISO_10993_3_CARCINO",  # FDA Section 6G: breached surface IS included
+        },
+    },
+
+    # ---- External communicating ----
     "external_communicating": {
         "limited": {
             "RISK_ASSESSMENT", "CHEM_CHAR_FULL",
@@ -127,6 +203,7 @@ ENDPOINT_MATRIX: dict[str, dict[str, set[str]]] = {
         },
     },
 
+    # ---- Circulating blood (direct contact) ----
     "circulating_blood": {
         "limited": {
             "RISK_ASSESSMENT", "CHEM_CHAR_FULL",
@@ -150,6 +227,7 @@ ENDPOINT_MATRIX: dict[str, dict[str, set[str]]] = {
         },
     },
 
+    # ---- Blood path indirect ----
     "blood_path_indirect": {
         "limited": {
             "RISK_ASSESSMENT", "CHEM_CHAR_FULL",
@@ -173,6 +251,7 @@ ENDPOINT_MATRIX: dict[str, dict[str, set[str]]] = {
         },
     },
 
+    # ---- Tissue / bone implant ----
     "implant_tissue": {
         "limited": {
             "RISK_ASSESSMENT", "CHEM_CHAR_FULL",
@@ -194,6 +273,7 @@ ENDPOINT_MATRIX: dict[str, dict[str, set[str]]] = {
         },
     },
 
+    # ---- Blood-contacting implant ----
     "implant_blood": {
         "limited": {
             "RISK_ASSESSMENT", "CHEM_CHAR_FULL",
@@ -219,10 +299,29 @@ ENDPOINT_MATRIX: dict[str, dict[str, set[str]]] = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# FIX 1, 2, 6 — Dynamic prerequisite resolution map
+# ---------------------------------------------------------------------------
+# Many test nodes list a specific chem char tier as their prerequisite, but the
+# active tier depends on the contact category (SCREENING for surface; FULL for
+# EC/implant). At build time, _build_test_nodes() replaces any chem-char prereq
+# with whichever tier is actually present in the active test set.
+#
+# This dict maps "either chem char tier" → resolved at build time.
+# Any test ID listed here will have its chem-char prerequisite dynamically
+# swapped to the correct tier before the node is created.
+
+CHEM_CHAR_TIERS = {"CHEM_CHAR_SCREENING", "CHEM_CHAR_FULL"}
+
 
 # ===========================================================================
-# MASTER TEST LIBRARY  (v2 — FDA 2023 Section 6 compliant)
+# MASTER TEST LIBRARY  (v2.1 — FDA 2023 Section 6 compliant)
 # ===========================================================================
+# IMPORTANT: For tests that can appear after either chem char tier, their
+# "prerequisites" list uses "CHEM_CHAR_SCREENING" as a placeholder. The
+# _build_test_nodes() function replaces this at runtime with whichever tier
+# is active (Fixes 1, 2, 6). Do not read these prereqs as literally meaning
+# only the screening tier is acceptable.
 
 MASTER_TEST_LIBRARY: dict[str, dict] = {
 
@@ -328,6 +427,7 @@ MASTER_TEST_LIBRARY: dict[str, dict] = {
             "contact (cells grown on material surface) may be needed."
         ),
         "phase": TestPhase.PRE_SUBMISSION,
+        # PLACEHOLDER: resolved at build time to whichever chem char tier is active (Fix 1)
         "prerequisites": ["CHEM_CHAR_SCREENING"],
         "can_parallelize_with": ["ISO_10993_10_SENS", "ISO_10993_10_IRR", "STERILITY_SAL"],
         "cost_low": 3000, "cost_high": 8000,
@@ -359,6 +459,7 @@ MASTER_TEST_LIBRARY: dict[str, dict] = {
             "Novel materials: GPMT is mandated over LLNA."
         ),
         "phase": TestPhase.PRE_SUBMISSION,
+        # PLACEHOLDER: resolved at build time to whichever chem char tier is active (Fix 2)
         "prerequisites": ["CHEM_CHAR_SCREENING"],
         "can_parallelize_with": ["ISO_10993_5", "ISO_10993_10_IRR", "CHEM_CHAR_FULL"],
         "cost_low": 6000, "cost_high": 14000,
@@ -384,6 +485,7 @@ MASTER_TEST_LIBRARY: dict[str, dict] = {
             "Test method must be appropriate for the specific route and duration of clinical exposure."
         ),
         "phase": TestPhase.PRE_SUBMISSION,
+        # PLACEHOLDER: resolved at build time to whichever chem char tier is active (Fix 2)
         "prerequisites": ["CHEM_CHAR_SCREENING"],
         "can_parallelize_with": ["ISO_10993_5", "ISO_10993_10_SENS"],
         "cost_low": 3000, "cost_high": 8000,
@@ -480,7 +582,8 @@ MASTER_TEST_LIBRARY: dict[str, dict] = {
             "Waiver only if chem char + literature adequately address all three components."
         ),
         "phase": TestPhase.PRE_SUBMISSION,
-        "prerequisites": ["CHEM_CHAR_FULL"],
+        # PLACEHOLDER: resolved at build time to whichever chem char tier is active (Fix 6)
+        "prerequisites": ["CHEM_CHAR_SCREENING"],
         "can_parallelize_with": ["ISO_10993_11_ACUTE", "ISO_10993_11_SUBACUTE"],
         "cost_low": 10000, "cost_high": 25000,
         "weeks_low": 8, "weeks_high": 16,
@@ -502,6 +605,7 @@ MASTER_TEST_LIBRARY: dict[str, dict] = {
         "standard": "ISO 10993-3:2023, FDA Guidance Section 6G",
         "description": (
             "Required for devices with >30 day contact with breached surfaces, EC, or implants. "
+            "NOT required for intact skin contact (FDA Section 6G). "
             "Primary method: risk assessment (literature review). "
             "Novel materials: literature review specifically recommended (FDA 6G). "
             "No experimental data available: SAR (structure-activity relationship) modeling required. "
@@ -1079,10 +1183,27 @@ NOVEL_KEYWORDS = {
     "custom formulation", "experimental material", "investigational material",
 }
 
+# FIX 3 — expanded blood-contact keyword list (FDA Section 4C pacemaker example)
+BLOOD_CONTACT_KEYWORDS = {
+    "blood", "vascular", "cardiac", "heart", "coronary", "intravascular",
+    "aortic", "venous", "arterial", "valv", "stent",
+    # Added in v2.1:
+    "pacemaker", "defibrillator", "icd", "catheter",
+    "hemodialysis", "dialysis", "lvad", "ventricular assist",
+    "extracorporeal", "heart-lung", "apheresis",
+}
+
 
 # ===========================================================================
 # Contact category → matrix key resolution
 # ===========================================================================
+
+# FIX 5 — keywords that indicate breached/compromised surface sub-category
+BREACHED_SURFACE_KEYWORDS = {
+    "wound", "breached", "compromised", "ulcer", "burn", "abrasion",
+    "laceration", "surgical site", "open wound", "denuded",
+}
+
 
 def _get_matrix_keys(
     contact_category: ContactCategory,
@@ -1092,26 +1213,33 @@ def _get_matrix_keys(
 ) -> list[tuple[str, str]]:
     """
     Map device contact profile to one or more (matrix_key, duration_key) tuples.
+
     Complex devices may span multiple categories (FDA Section 4C — pacemaker example).
+    Blood-contacting implants return both implant_blood and implant_tissue slots so
+    that tests from both are unioned into the final set.
+
+    FIX 3: expanded blood-contact keyword set to include pacemaker, defibrillator,
+            ICD, catheter, LVAD, hemodialysis (previously missing).
+    FIX 5: "surface" now resolves to surface_intact or surface_breached depending
+            on whether description mentions wound/breached/compromised contact.
     """
     dur = DURATION_KEY.get(contact_duration, "limited")
     intended_lower = intended_use.lower()
 
-    # Blood-contacting implants get both implant_blood and implant_tissue
-    if is_implantable and any(w in intended_lower for w in [
-        "blood", "vascular", "cardiac", "heart", "coronary", "intravascular",
-        "aortic", "venous", "arterial", "valv", "stent",
-    ]):
+    # Blood-contacting implants → both slots (FIX 3: expanded keyword set)
+    if is_implantable and any(w in intended_lower for w in BLOOD_CONTACT_KEYWORDS):
         return [("implant_blood", dur), ("implant_tissue", dur)]
 
     if is_implantable or contact_category == ContactCategory.IMPLANT:
         return [("implant_tissue", dur)]
 
+    # Extracorporeal / circulating blood (non-implant)
     if any(w in intended_lower for w in [
         "circulating blood", "extracorporeal", "dialysis", "heart-lung", "apheresis",
     ]):
         return [("circulating_blood", dur)]
 
+    # Blood path indirect
     if contact_category == ContactCategory.EXTERNAL_COMMUNICATING and any(w in intended_lower for w in [
         "infusion", "iv set", "iv tubing", "blood path", "fluid path",
     ]):
@@ -1120,10 +1248,14 @@ def _get_matrix_keys(
     if contact_category == ContactCategory.EXTERNAL_COMMUNICATING:
         return [("external_communicating", dur)]
 
+    # Surface — FIX 5: split into intact vs breached
     if contact_category == ContactCategory.SURFACE:
-        return [("surface", dur)]
+        if any(w in intended_lower for w in BREACHED_SURFACE_KEYWORDS):
+            return [("surface_breached", dur)]
+        return [("surface_intact", dur)]
 
-    return [("surface", dur)]
+    # Default fallback
+    return [("surface_intact", dur)]
 
 
 # ===========================================================================
@@ -1131,6 +1263,12 @@ def _get_matrix_keys(
 # ===========================================================================
 
 def _get_device_flags(classification: ClassificationResult) -> dict[str, bool]:
+    """
+    Derive boolean device-level flags that activate additional test tracks.
+
+    FIX 4: bool(generator) was always True — corrected to any() throughout.
+    FIX 8: is_ivd now uses enum member comparison instead of .value string match.
+    """
     profile = classification.product_profile
     intended_lower = profile.intended_use.lower()
     desc_lower = profile.raw_description.lower()
@@ -1143,12 +1281,19 @@ def _get_device_flags(classification: ClassificationResult) -> dict[str, bool]:
         "is_electrical": profile.mechanism_of_action.value == "electrical",
         "needs_clinical": classification.regulatory_pathway == RegulatoryPathway.PMA,
         "is_510k": classification.regulatory_pathway in (RegulatoryPathway.K510, RegulatoryPathway.EXEMPT),
-        "is_ivd": getattr(classification, "product_category", None) is not None
-                  and classification.product_category.value == "diagnostic_ivd",
+
+        # FIX 8: use enum member comparison, not .value string
+        "is_ivd": (
+            classification.product_category == ProductCategory.DIAGNOSTIC_IVD
+        ),
+
         "is_cber": classification.lead_center == FDALeadCenter.CBER,
-        "has_absorbable": bool(kw for kw in ABSORBABLE_KEYWORDS if kw in materials_text),
-        "has_nano": bool(kw for kw in NANO_KEYWORDS if kw in materials_text),
-        "has_novel_material": bool(kw for kw in NOVEL_KEYWORDS if kw in materials_text),
+
+        # FIX 4: all three were bool(generator) — always True. Corrected to any().
+        "has_absorbable": any(kw in materials_text for kw in ABSORBABLE_KEYWORDS),
+        "has_nano": any(kw in materials_text for kw in NANO_KEYWORDS),
+        "has_novel_material": any(kw in materials_text for kw in NOVEL_KEYWORDS),
+
         "has_in_situ_polymerizing": any(w in desc_lower for w in [
             "in situ polymerizing", "polymerizes in situ", "cures in vivo",
         ]),
@@ -1173,7 +1318,7 @@ def _get_active_waivers(classification: ClassificationResult, flags: dict[str, b
     if normalised & USP_CLASS_VI_MATERIALS:
         waivers.add("usp_class_vi")
 
-    # Novel material voids all waivers (FDA Sec 6B, 6F — new testing required)
+    # Novel material voids all waivers (FDA Sec 6B, 6F)
     if flags.get("has_novel_material"):
         waivers.clear()
 
@@ -1232,7 +1377,7 @@ def _select_test_ids(
     if not flags["is_ivd"]:
         required.add("MECHANICAL_PERF")
 
-    # Promote to full chem char if screening is present alongside EC/implant tests
+    # Ensure only one chem char tier is active
     if "CHEM_CHAR_FULL" in required:
         required.discard("CHEM_CHAR_SCREENING")
 
@@ -1242,7 +1387,6 @@ def _select_test_ids(
     elif pathway == RegulatoryPathway.PMA:
         required.update(["CLINICAL_STUDY", "SUBMISSION_PMA_PREP"])
 
-    # Only return IDs that exist in the library
     valid = {tid for tid in required if tid in MASTER_TEST_LIBRARY}
     if unknown := required - valid:
         logger.warning("Unknown test IDs skipped: %s", unknown)
@@ -1254,15 +1398,43 @@ def _build_test_nodes(
     waivers: set[str],
     flags: dict[str, bool],
 ) -> list[TestNode]:
+    """
+    Build TestNode objects for each selected test ID.
+
+    FIX 1, 2, 6 — Dynamic prerequisite resolution:
+    Several test nodes (ISO_10993_5, ISO_10993_10_SENS, ISO_10993_10_IRR,
+    ISO_10993_3_GENO) use CHEM_CHAR_SCREENING as a placeholder prerequisite
+    in the library. For EC/implant devices, only CHEM_CHAR_FULL is active.
+    This function detects which chem char tier is in active_ids and replaces
+    any placeholder with the correct active tier before filtering to active_ids.
+    """
     nodes: list[TestNode] = []
     active_ids = set(test_ids)
+
+    # Determine which chem char tier is active in this roadmap
+    active_chem_char: Optional[str] = None
+    if "CHEM_CHAR_FULL" in active_ids:
+        active_chem_char = "CHEM_CHAR_FULL"
+    elif "CHEM_CHAR_SCREENING" in active_ids:
+        active_chem_char = "CHEM_CHAR_SCREENING"
 
     for test_id in test_ids:
         if test_id not in MASTER_TEST_LIBRARY:
             continue
         spec = MASTER_TEST_LIBRARY[test_id]
-        active_prereqs = [p for p in spec["prerequisites"] if p in active_ids]
 
+        # FIX 1, 2, 6: resolve chem-char placeholder in prerequisites
+        resolved_prereqs = []
+        for p in spec["prerequisites"]:
+            if p in CHEM_CHAR_TIERS and active_chem_char is not None:
+                resolved_prereqs.append(active_chem_char)
+            else:
+                resolved_prereqs.append(p)
+
+        # Filter to only prerequisites that are actually in the active set
+        active_prereqs = [p for p in resolved_prereqs if p in active_ids]
+
+        # Waiver logic
         waivable = spec["waivable_with_existing_data"]
         waiver_rationale = spec.get("waiver_rationale")
 

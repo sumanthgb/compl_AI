@@ -718,7 +718,11 @@ function runDemo() {
 }
 
 async function runAnalysis() {
+  const desc = buildDesc(); // capture BEFORE any reset
+  S.msgs = []; S.turns = 0; S.ctx = {};
+  
   showPage('results');
+  
   document.getElementById('nodeList').innerHTML = `
     <div style="padding:2rem 0;text-align:center;color:var(--text-3);font-family:var(--mono);font-size:0.72rem">
       <div style="width:28px;height:28px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.85s linear infinite;margin:0 auto 0.875rem"></div>
@@ -728,7 +732,7 @@ async function runAnalysis() {
   try {
     const res = await fetch(`${S.apiBase}/analyze`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({description:buildDesc(), run_ip_radar:true, run_materials_optimization:true}),
+      body: JSON.stringify({description:desc, run_ip_radar:true, run_materials_optimization:true}),
     });
     if (!res.ok) throw new Error();
     S.result = await res.json();
@@ -885,7 +889,20 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
-function goBack() { showPage('landing'); }
+function goBack() {
+  S.msgs = []; S.turns = 0; S.ctx = {};
+  document.getElementById('chatMsgs').innerHTML = `
+    <div class="msg ai">
+      <div class="msg-av">c.</div>
+      <div class="msg-bub">Hi! Tell me about what you're building — even a sentence or two is enough. What does it do?</div>
+    </div>`;
+  document.getElementById('quickOpts').innerHTML = `
+    <div class="qopt" onclick="quickSend('A cortical organoid scaffold for traumatic brain injury repair')">Organoid scaffold</div>
+    <div class="qopt" onclick="quickSend('A wearable continuous glucose monitor')">Glucose monitor</div>
+    <div class="qopt" onclick="quickSend('A lateral flow assay for early cancer detection')">Diagnostic assay</div>
+    <div class="qopt" onclick="runDemo()">Load demo →</div>`;
+  showPage('landing');
+}
 function wait(ms) { return new Promise(r=>setTimeout(r,ms)); }
 function fc(n) {
   if (!n) return '0';

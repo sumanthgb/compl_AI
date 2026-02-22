@@ -1,0 +1,13 @@
+INFO:     Will watch for changes in these directories: ['/Users/sanke/Downloads/compl_ai']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [13894] using StatReload
+INFO:     Started server process [13897]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+2026-02-21 16:35:52,376 [INFO] systems.classification_engine: Starting classification (length=196)
+2026-02-21 16:35:58,785 [INFO] httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-02-21 16:35:58,834 [INFO] systems.classification_engine: Extraction: category=ProductCategory.MEDICAL_DEVICE, MOA=MechanismOfAction.MECHANICAL, diagnostic=False, living_cells=False, gene_editing=False
+2026-02-21 16:35:58,835 [INFO] systems.classification_engine: Primary routing: category=ProductCategory.MEDICAL_DEVICE, lead_center=FDALeadCenter.CDRH, pathway=RegulatoryPathway.UNKNOWN
+2026-02-21 16:35:59,204 [INFO] httpx: HTTP Request: GET https://api.fda.gov/device/classification.json?search=device_name%3AFixation+of+small+bone+fractures+in+the+hand+using+a+resorbable+screw+that+is+gradually+absorbed+by+the+body+over+18-24+months+Small+bone+fractures+of+the+hand+requiring+internal+fixation+mechanical&limit=20&api_key=uz7nYfw93rEK7dpEgtEMES91KRFFCTgcZHED5O7X "HTTP/1.1 200 OK"
+2026-02-21 16:35:59,511 [INFO] httpx: HTTP Request: GET https://api.fda.gov/device/510k.json?search=product_code%3AQEJ&limit=3&sort=date_received%3Adesc&api_key=uz7nYfw93rEK7dpEgtEMES91KRFFCTgcZHED5O7X "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51594 - "POST /classify HTTP/1.1" 200 OK

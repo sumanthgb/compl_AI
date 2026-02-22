@@ -55,7 +55,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://sumanthgb.github.io"],  # Restrict to your frontend domain in production
+    allow_origins=["https://sumanthgb.github.io/compl_AI/complai.html"],  # Restrict to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compl.ai — Regulatory & IP Navigator</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --surface: #ffffff;
+    --surface-2: #f0ede6;
+    --border: #e2ddd5;
+    --text-primary: #1a1714;
+    --text-secondary: #6b6560;
+    --text-muted: #9e9890;
+    --accent: #1a3a2a;
+    --accent-light: #2d5a42;
+    --accent-glow: rgba(26, 58, 42, 0.08);
+    --red: #c0392b;
+    --red-light: #fdf0ee;
+    --yellow: #b7791f;
+    --yellow-light: #fef9ee;
+    --green: #276749;
+    --green-light: #eef7f1;
+    --serif: 'DM Serif Display', Georgia, serif;
+    --mono: 'DM Mono', 'Courier New', monospace;
+    --sans: 'Instrument Sans', system-ui, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--sans);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    padding: 0 2rem;
+    height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(247, 245, 240, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-logo {
+    font-family: var(--mono);
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+  }
+  .nav-logo span { color: var(--text-muted); }
+  .nav-disclaimer {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    max-width: 360px;
+    text-align: right;
+    line-height: 1.4;
+  }
+
+  /* ── PAGES ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── LANDING ── */
+  #landing {
+    min-height: 100vh;
+    padding-top: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .hero {
+    width: 100%;
+    max-width: 680px;
+    padding: 5rem 2rem 3rem;
+    text-align: center;
+  }
+
+  .hero-eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1.5rem;
+    opacity: 0;
+    animation: fadeUp 0.6s ease forwards 0.1s;
+  }
+
+  .hero h1 {
+    font-family: var(--serif);
+    font-size: clamp(2.4rem, 5vw, 3.4rem);
+    line-height: 1.1;
+    color: var(--text-primary);
+    margin-bottom: 1.25rem;
+    opacity: 0;
+    animation: fadeUp 0.6s ease forwards 0.2s;
+  }
+
+  .hero h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  .hero p {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    max-width: 480px;
+    margin: 0 auto 3rem;
+    opacity: 0;
+    animation: fadeUp 0.6s ease forwards 0.3s;
+  }
+
+  /* ── PICKER ── */
+  .picker {
+    width: 100%;
+    max-width: 560px;
+    padding: 0 2rem 4rem;
+    opacity: 0;
+    animation: fadeUp 0.6s ease forwards 0.4s;
+  }
+
+  .picker-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    display: block;
+  }
+
+  .genre-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .genre-card {
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    background: var(--surface);
+    cursor: pointer;
+    transition: all 0.18s ease;
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    user-select: none;
+  }
+
+  .genre-card:hover {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    transform: translateX(3px);
+  }
+
+  .genre-card.selected {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+
+  .genre-card.selected .genre-check {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .genre-card.selected .genre-check::after {
+    display: block;
+  }
+
+  .genre-check {
+    width: 18px;
+    height: 18px;
+    border: 1.5px solid var(--border);
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    position: relative;
+    transition: all 0.15s;
+  }
+
+  .genre-check::after {
+    content: '';
+    display: none;
+    position: absolute;
+    left: 4px; top: 1px;
+    width: 5px; height: 9px;
+    border: 2px solid white;
+    border-top: none; border-left: none;
+    transform: rotate(45deg);
+  }
+
+  .genre-text {}
+  .genre-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.15rem;
+  }
+  .genre-sub {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  /* Other input */
+  .other-field {
+    display: none;
+    margin-top: 0.5rem;
+  }
+  .other-field.visible { display: block; }
+  .other-field textarea {
+    width: 100%;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 0.875rem 1rem;
+    font-family: var(--sans);
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    background: var(--surface);
+    resize: vertical;
+    min-height: 80px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .other-field textarea:focus { border-color: var(--accent); }
+
+  /* Follow-up questions */
+  .followup {
+    display: none;
+    margin-top: 1.25rem;
+    padding: 1.25rem;
+    background: var(--surface-2);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  .followup.visible { display: block; }
+  .followup-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.875rem;
+    display: block;
+  }
+  .followup-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .followup-option {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    padding: 0.625rem 0.875rem;
+    border-radius: 7px;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    transition: all 0.15s;
+  }
+  .followup-option:hover, .followup-option.selected {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-glow);
+  }
+
+  /* Materials input */
+  .materials-field {
+    display: none;
+    margin-top: 1.25rem;
+  }
+  .materials-field.visible { display: block; }
+  .materials-field label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+  .materials-field input {
+    width: 100%;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 0.875rem 1rem;
+    font-family: var(--sans);
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    background: var(--surface);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .materials-field input:focus { border-color: var(--accent); }
+  .materials-field .hint {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 0.4rem;
+    font-family: var(--mono);
+  }
+
+  /* CTA */
+  .cta-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-top: 1.5rem;
+  }
+
+  .btn-primary {
+    padding: 0.875rem 2rem;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .btn-primary:hover { background: var(--accent-light); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .btn-demo {
+    padding: 0.875rem 1.25rem;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  .btn-demo:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── LOADING ── */
+  #loading {
+    min-height: 100vh;
+    padding-top: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+  }
+
+  .loading-inner { text-align: center; max-width: 360px; }
+
+  .loading-spinner {
+    width: 48px; height: 48px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+    margin: 0 auto 1.5rem;
+  }
+
+  .loading-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    margin-top: 1.5rem;
+    text-align: left;
+  }
+
+  .loading-step {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    transition: all 0.3s;
+  }
+
+  .loading-step.active {
+    color: var(--accent);
+    background: var(--accent-glow);
+  }
+
+  .loading-step.done {
+    color: var(--green);
+  }
+
+  .step-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .loading-step.active .step-dot { background: var(--accent); }
+  .loading-step.done .step-dot { background: var(--green); }
+
+  /* ── RESULTS ── */
+  #results {
+    min-height: 100vh;
+    padding-top: 56px;
+  }
+
+  .results-header {
+    border-bottom: 1px solid var(--border);
+    padding: 2rem 2.5rem 1.5rem;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .results-title-block {}
+  .results-eyebrow {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.4rem;
+  }
+  .results-title {
+    font-family: var(--serif);
+    font-size: 1.6rem;
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+
+  .results-meta {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 100px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  .badge-accent { background: var(--accent); color: white; }
+  .badge-outline { border: 1.5px solid var(--border); color: var(--text-secondary); background: var(--surface); }
+  .badge-red { background: var(--red-light); color: var(--red); border: 1px solid rgba(192,57,43,0.2); }
+  .badge-yellow { background: var(--yellow-light); color: var(--yellow); border: 1px solid rgba(183,121,31,0.2); }
+  .badge-green { background: var(--green-light); color: var(--green); border: 1px solid rgba(39,103,73,0.2); }
+
+  .results-actions {
+    display: flex;
+    gap: 0.625rem;
+    align-items: center;
+  }
+
+  .btn-back {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-back:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Cross-module flag */
+  .flag-banner {
+    margin: 1.5rem 2.5rem;
+    padding: 1.25rem 1.5rem;
+    background: #fffbf0;
+    border: 1.5px solid #f0c040;
+    border-radius: 10px;
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .flag-banner.critical {
+    background: #fff8f7;
+    border-color: #e08070;
+  }
+
+  .flag-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .flag-content {}
+  .flag-title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    margin-bottom: 0.3rem;
+    color: var(--text-primary);
+  }
+  .flag-body {
+    font-size: 0.825rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .flag-saving {
+    margin-top: 0.625rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--green);
+    font-weight: 500;
+  }
+
+  /* Panels */
+  .panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .panel {
+    padding: 1.75rem;
+    border-right: 1px solid var(--border);
+    min-height: 500px;
+  }
+  .panel:last-child { border-right: none; }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .panel-status {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  /* Pathway panel */
+  .pathway-route {
+    margin-bottom: 1.25rem;
+  }
+
+  .pathway-center {
+    font-family: var(--serif);
+    font-size: 1.4rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+  }
+
+  .pathway-label {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .pathway-detail {
+    font-size: 0.825rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    padding: 1rem;
+    background: var(--surface-2);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .confidence-bar {
+    margin-top: 1rem;
+  }
+  .confidence-label {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    margin-bottom: 0.375rem;
+  }
+  .confidence-track {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .confidence-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 1s ease;
+  }
+
+  .predicate-list {
+    margin-top: 1.25rem;
+  }
+  .predicate-label {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.625rem;
+  }
+  .predicate-item {
+    padding: 0.625rem 0.875rem;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    margin-bottom: 0.375rem;
+    background: var(--surface);
+  }
+  .predicate-knum {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--accent);
+    margin-bottom: 0.15rem;
+  }
+  .predicate-name {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+
+  /* Timeline panel */
+  .timeline-summary {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .timeline-stat {
+    flex: 1;
+    padding: 0.875rem;
+    background: var(--surface-2);
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .timeline-stat-val {
+    font-family: var(--serif);
+    font-size: 1.4rem;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 0.25rem;
+  }
+
+  .timeline-stat-label {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .timeline-track {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin-bottom: 1rem;
+  }
+
+  .timeline-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.875rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .timeline-item:hover { border-color: var(--accent); background: var(--accent-glow); }
+
+  .timeline-phase-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .phase-pre { background: #4a90d9; }
+  .phase-sub { background: var(--accent); }
+  .phase-post { background: var(--yellow); }
+
+  .timeline-item-name {
+    flex: 1;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .timeline-item-weeks {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .waivable-tag {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    background: var(--green-light);
+    color: var(--green);
+    white-space: nowrap;
+  }
+
+  .data-gap {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    background: var(--surface-2);
+    border-radius: 8px;
+    border-left: 3px solid var(--accent);
+  }
+  .data-gap-label {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+  }
+  .data-gap-text {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* IP panel */
+  .ip-summary-box {
+    padding: 1rem;
+    background: var(--surface-2);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 1.25rem;
+    border-left: 3px solid var(--yellow);
+  }
+
+  .patent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .patent-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.875rem;
+    background: var(--surface);
+    transition: all 0.15s;
+  }
+  .patent-card:hover { border-color: var(--text-muted); }
+
+  .patent-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .traffic-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .dot-red { background: var(--red); }
+  .dot-yellow { background: var(--yellow); }
+  .dot-green { background: var(--green); }
+
+  .patent-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+    flex: 1;
+  }
+
+  .patent-meta {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .patent-num {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--text-muted);
+  }
+
+  .patent-assignee {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+  }
+
+  .patent-explanation {
+    font-size: 0.775rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* Materials optimization */
+  .optimization-banner {
+    margin: 0 2.5rem 1.5rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--green-light);
+    border: 1.5px solid rgba(39,103,73,0.25);
+    border-radius: 10px;
+  }
+
+  .opt-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.875rem;
+  }
+
+  .opt-icon { font-size: 1.1rem; }
+
+  .opt-title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+  }
+
+  .opt-swap {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin-bottom: 0.625rem;
+    font-size: 0.825rem;
+    color: var(--text-secondary);
+  }
+
+  .opt-material {
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+  }
+
+  .opt-original { background: var(--red-light); color: var(--red); }
+  .opt-suggested { background: var(--green-light); color: var(--green); }
+
+  .opt-arrow { color: var(--text-muted); font-size: 0.8rem; }
+
+  .opt-savings {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .opt-saving-pill {
+    padding: 0.3rem 0.75rem;
+    background: white;
+    border-radius: 100px;
+    border: 1px solid rgba(39,103,73,0.2);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--green);
+  }
+
+  .opt-rationale {
+    margin-top: 0.875rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* Disclaimer */
+  .disclaimer {
+    padding: 1.5rem 2.5rem;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+    text-align: center;
+  }
+
+  /* Error state */
+  .error-box {
+    margin: 2rem 2.5rem;
+    padding: 1.25rem;
+    background: var(--red-light);
+    border: 1px solid rgba(192,57,43,0.2);
+    border-radius: 10px;
+    font-size: 0.875rem;
+    color: var(--red);
+  }
+
+  /* Animations */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .panels { grid-template-columns: 1fr; }
+    .panel { border-right: none; border-bottom: 1px solid var(--border); }
+    .results-header { padding: 1.5rem; }
+    .flag-banner, .optimization-banner { margin: 1rem 1.5rem; }
+    .disclaimer { padding: 1rem 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">compl<span>.ai</span></div>
+  <div class="nav-disclaimer">Directional guidance only · Not legal or regulatory advice · Consult qualified professionals before making regulatory or IP decisions</div>
+</nav>
+
+<!-- LANDING PAGE -->
+<div id="landing" class="page active">
+  <div class="hero">
+    <div class="hero-eyebrow">Regulatory & IP Navigator</div>
+    <h1>Your path from <em>lab</em> to <em>clinic</em>, mapped.</h1>
+    <p>AI-powered regulatory classification, biocompatibility roadmapping, and IP landscape analysis — built for early-stage biotech and medtech teams.</p>
+  </div>
+
+  <div class="picker">
+    <span class="picker-label">What are you building? Select all that apply.</span>
+
+    <div class="genre-stack">
+      <div class="genre-card" data-genre="cell_gene_therapy" onclick="toggleGenre(this)">
+        <div class="genre-check"></div>
+        <div class="genre-text">
+          <div class="genre-title">Cell Therapy & Regenerative Medicine</div>
+          <div class="genre-sub">Living cells · organoids · stem cells · gene editing · biological grafts</div>
+        </div>
+      </div>
+
+      <div class="genre-card" data-genre="medical_device" onclick="toggleGenre(this)">
+        <div class="genre-check"></div>
+        <div class="genre-text">
+          <div class="genre-title">Medical Device</div>
+          <div class="genre-sub">Implants · wearables · surgical instruments · sensors</div>
+        </div>
+      </div>
+
+      <div class="genre-card" data-genre="diagnostic" onclick="toggleGenre(this)">
+        <div class="genre-check"></div>
+        <div class="genre-text">
+          <div class="genre-title">Diagnostic</div>
+          <div class="genre-sub">Detection · measurement · screening · assays · biosensors</div>
+        </div>
+      </div>
+
+      <div class="genre-card" data-genre="combination" onclick="toggleGenre(this)">
+        <div class="genre-check"></div>
+        <div class="genre-text">
+          <div class="genre-title">Combination Product</div>
+          <div class="genre-sub">Device + biology · drug-eluting · cell-seeded scaffold</div>
+        </div>
+      </div>
+
+      <div class="genre-card" data-genre="other" onclick="toggleGenre(this)">
+        <div class="genre-check"></div>
+        <div class="genre-text">
+          <div class="genre-title">Other / Not Sure</div>
+          <div class="genre-sub">Describe what you're building in plain language</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Other text input -->
+    <div class="other-field" id="otherField">
+      <textarea placeholder="Describe what you're building in plain English…"></textarea>
+    </div>
+
+    <!-- Diagnostic follow-up -->
+    <div class="followup" id="diagnosticFollowup">
+      <span class="followup-label">Does your diagnostic contact the body directly?</span>
+      <div class="followup-options">
+        <div class="followup-option" data-val="ivd" onclick="selectFollowup(this, 'diagnosticFollowup')">
+          No — testing happens on a sample outside the body (IVD)
+        </div>
+        <div class="followup-option" data-val="invivo" onclick="selectFollowup(this, 'diagnosticFollowup')">
+          Yes — device contacts or enters the body to generate a reading
+        </div>
+      </div>
+    </div>
+
+    <!-- Combination follow-up -->
+    <div class="followup" id="combinationFollowup">
+      <span class="followup-label">What primarily drives the therapeutic effect?</span>
+      <div class="followup-options">
+        <div class="followup-option" data-val="biology" onclick="selectFollowup(this, 'combinationFollowup')">
+          Biology — the cellular or biological component
+        </div>
+        <div class="followup-option" data-val="device" onclick="selectFollowup(this, 'combinationFollowup')">
+          Device — the physical or mechanical component
+        </div>
+        <div class="followup-option" data-val="drug" onclick="selectFollowup(this, 'combinationFollowup')">
+          Drug — the chemical or pharmacological component
+        </div>
+      </div>
+    </div>
+
+    <!-- Materials input -->
+    <div class="materials-field" id="materialsField">
+      <label>What materials are you using?</label>
+      <input type="text" id="materialsInput" placeholder="e.g. PLGA, alginate, cortical organoids, PDMS…" />
+      <div class="hint">Separate multiple materials with commas</div>
+    </div>
+
+    <div class="cta-row">
+      <button class="btn-primary" id="analyzeBtn" onclick="startAnalysis()" disabled>
+        <span>Map my path</span>
+        <span>→</span>
+      </button>
+      <button class="btn-demo" onclick="loadDemo()">Load demo scenario</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOADING PAGE -->
+<div id="loading" class="page">
+  <div class="loading-inner">
+    <div class="loading-spinner"></div>
+    <div style="font-family: var(--serif); font-size: 1.3rem; margin-bottom: 0.5rem;">Mapping your path…</div>
+    <div style="font-size: 0.825rem; color: var(--text-muted);">This takes 30–90 seconds. We're running four systems in parallel.</div>
+    <div class="loading-steps">
+      <div class="loading-step active" id="step1"><div class="step-dot"></div>Classifying product & routing to FDA pathway</div>
+      <div class="loading-step" id="step2"><div class="step-dot"></div>Generating regulatory testing roadmap</div>
+      <div class="loading-step" id="step3"><div class="step-dot"></div>Scanning patent landscape (USPTO)</div>
+      <div class="loading-step" id="step4"><div class="step-dot"></div>Optimizing materials for cost & time savings</div>
+    </div>
+  </div>
+</div>
+
+<!-- RESULTS PAGE -->
+<div id="results" class="page">
+  <div class="results-header">
+    <div class="results-title-block">
+      <div class="results-eyebrow">Analysis complete</div>
+      <div class="results-title" id="resultsTitle">—</div>
+    </div>
+    <div class="results-actions">
+      <div class="results-meta" id="resultsMeta"></div>
+      <button class="btn-back" onclick="goBack()">← New analysis</button>
+    </div>
+  </div>
+
+  <!-- Cross-module flag -->
+  <div id="flagBanner" style="display:none"></div>
+
+  <!-- Materials optimization -->
+  <div id="optimizationBanner" style="display:none"></div>
+
+  <!-- Three panels -->
+  <div class="panels">
+    <!-- Panel 1: Regulatory Pathway -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Regulatory Pathway</div>
+        <div class="panel-status"></div>
+      </div>
+      <div id="pathwayContent">—</div>
+    </div>
+
+    <!-- Panel 2: Testing Roadmap -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Testing Roadmap</div>
+        <div class="panel-status"></div>
+      </div>
+      <div id="roadmapContent">—</div>
+    </div>
+
+    <!-- Panel 3: IP Landscape -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">IP Landscape</div>
+        <div class="panel-status"></div>
+      </div>
+      <div id="ipContent">—</div>
+    </div>
+  </div>
+
+  <div class="disclaimer">
+    compl.ai provides directional guidance only and does not constitute legal, regulatory, or IP advice.<br>
+    Consult qualified professionals — including a registered patent attorney and regulatory affairs specialist — before making regulatory or IP decisions.<br>
+    Cost and timeline estimates are based on published CRO pricing data and FDA submission timelines and should be treated as directional ranges only.
+  </div>
+</div>
+
+<script>
+  // ── STATE ──
+  const state = {
+    selectedGenres: new Set(),
+    diagnosticType: null,
+    combinationDriver: null,
+    materials: '',
+    apiBase: 'http://localhost:8000',
+    result: null,
+  };
+
+  // ── GENRE PICKER ──
+  function toggleGenre(card) {
+    const genre = card.dataset.genre;
+    if (state.selectedGenres.has(genre)) {
+      state.selectedGenres.delete(genre);
+      card.classList.remove('selected');
+    } else {
+      state.selectedGenres.add(genre);
+      card.classList.add('selected');
+    }
+    updateFollowups();
+    updateMaterialsField();
+    updateAnalyzeBtn();
+  }
+
+  function updateFollowups() {
+    const diagFollowup = document.getElementById('diagnosticFollowup');
+    const combFollowup = document.getElementById('combinationFollowup');
+    const otherField = document.getElementById('otherField');
+
+    diagFollowup.classList.toggle('visible', state.selectedGenres.has('diagnostic'));
+    combFollowup.classList.toggle('visible', state.selectedGenres.has('combination'));
+    otherField.classList.toggle('visible', state.selectedGenres.has('other'));
+
+    if (!state.selectedGenres.has('diagnostic')) state.diagnosticType = null;
+    if (!state.selectedGenres.has('combination')) state.combinationDriver = null;
+  }
+
+  function updateMaterialsField() {
+    const field = document.getElementById('materialsField');
+    const needsMaterials = state.selectedGenres.size > 0 && !state.selectedGenres.has('other');
+    field.classList.toggle('visible', needsMaterials);
+  }
+
+  function selectFollowup(el, groupId) {
+    const group = document.getElementById(groupId);
+    group.querySelectorAll('.followup-option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    if (groupId === 'diagnosticFollowup') state.diagnosticType = el.dataset.val;
+    if (groupId === 'combinationFollowup') state.combinationDriver = el.dataset.val;
+    updateAnalyzeBtn();
+  }
+
+  function updateAnalyzeBtn() {
+    const btn = document.getElementById('analyzeBtn');
+    let ready = state.selectedGenres.size > 0;
+    if (state.selectedGenres.has('diagnostic') && !state.diagnosticType) ready = false;
+    if (state.selectedGenres.has('combination') && !state.combinationDriver) ready = false;
+    btn.disabled = !ready;
+  }
+
+  // ── DEMO LOAD ──
+  function loadDemo() {
+    // Select combination
+    document.querySelectorAll('.genre-card').forEach(c => {
+      if (c.dataset.genre === 'combination') {
+        c.classList.add('selected');
+        state.selectedGenres.add('combination');
+      }
+    });
+
+    // Select combination driver: biology
+    updateFollowups();
+    setTimeout(() => {
+      const combFollowup = document.getElementById('combinationFollowup');
+      const bioOption = combFollowup.querySelector('[data-val="biology"]');
+      if (bioOption) selectFollowup(bioOption, 'combinationFollowup');
+    }, 100);
+
+    // Set materials
+    updateMaterialsField();
+    const matInput = document.getElementById('materialsInput');
+    matInput.value = 'biodegradable polymer scaffold, cortical organoids, alginate';
+    state.materials = matInput.value;
+
+    updateAnalyzeBtn();
+
+    // Auto-analyze with demo data after short delay
+    setTimeout(() => startAnalysis(true), 400);
+  }
+
+  // ── ANALYSIS ──
+  async function startAnalysis(isDemo = false) {
+    const matInput = document.getElementById('materialsInput');
+    state.materials = matInput.value;
+
+    const description = buildDescription(isDemo);
+    showPage('loading');
+    animateLoadingSteps();
+
+    try {
+      const response = await fetch(`${state.apiBase}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, run_ip_radar: true, run_materials_optimization: true }),
+      });
+
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      const data = await response.json();
+      state.result = data;
+      renderResults(data);
+      showPage('results');
+    } catch (err) {
+      // For demo purposes, load mock data if API unavailable
+      console.warn('API unavailable, loading mock data:', err.message);
+      const mockData = getMockData(isDemo);
+      state.result = mockData;
+      renderResults(mockData);
+      showPage('results');
+    }
+  }
+
+  function buildDescription(isDemo) {
+    if (isDemo) {
+      return "We are developing a biodegradable polymer scaffold seeded with cortical organoids for traumatic brain injury repair. The scaffold is a combination product — the cortical organoids (living neural cells) provide the primary therapeutic effect by integrating with host tissue, while the biodegradable polymer provides structural support and degrades over approximately 18 months. Materials include PLGA biodegradable polymer and GMP-grade alginate for organoid encapsulation. Intended as a long-term implant in neural tissue.";
+    }
+
+    const genres = [...state.selectedGenres];
+    const otherText = document.querySelector('#otherField textarea')?.value || '';
+    const materials = state.materials;
+
+    let desc = `Product type: ${genres.join(', ')}. `;
+    if (state.diagnosticType) desc += `Diagnostic type: ${state.diagnosticType === 'ivd' ? 'in vitro (sample outside body)' : 'in vivo (contacts body)'}. `;
+    if (state.combinationDriver) desc += `Primary mode of action: ${state.combinationDriver}. `;
+    if (materials) desc += `Materials: ${materials}. `;
+    if (otherText) desc += otherText;
+    return desc;
+  }
+
+  let loadingInterval;
+  function animateLoadingSteps() {
+    const steps = ['step1','step2','step3','step4'];
+    let current = 0;
+    steps.forEach(s => {
+      const el = document.getElementById(s);
+      el.classList.remove('active','done');
+    });
+    document.getElementById('step1').classList.add('active');
+
+    loadingInterval = setInterval(() => {
+      if (current < steps.length - 1) {
+        document.getElementById(steps[current]).classList.remove('active');
+        document.getElementById(steps[current]).classList.add('done');
+        current++;
+        document.getElementById(steps[current]).classList.add('active');
+      }
+    }, 18000);
+  }
+
+  // ── RENDER RESULTS ──
+  function renderResults(data) {
+    clearInterval(loadingInterval);
+    const cls = data.classification || {};
+    const roadmap = data.roadmap || {};
+    const ip = data.ip_radar || {};
+    const opt = data.materials_optimization || {};
+
+    // Header
+    const pathway = cls.regulatory_pathway || 'Unknown';
+    const center = cls.lead_center || '';
+    document.getElementById('resultsTitle').textContent = `${formatPathway(pathway)} · ${center}`;
+
+    const meta = document.getElementById('resultsMeta');
+    meta.innerHTML = `
+      <span class="badge badge-accent">${cls.product_category ? formatCategory(cls.product_category) : 'Unknown'}</span>
+      ${cls.device_class && cls.device_class !== 'unknown' ? `<span class="badge badge-outline">${cls.device_class}</span>` : ''}
+      ${cls.confidence ? `<span class="badge badge-outline">${Math.round(cls.confidence * 100)}% confidence</span>` : ''}
+    `;
+
+    // Cross-module flag
+    renderFlag(data);
+
+    // Materials optimization banner
+    renderOptimization(opt);
+
+    // Panel 1: Pathway
+    renderPathway(cls);
+
+    // Panel 2: Roadmap
+    renderRoadmap(roadmap);
+
+    // Panel 3: IP
+    renderIP(ip);
+  }
+
+  function renderFlag(data) {
+    const flagEl = document.getElementById('flagBanner');
+    const cls = data.classification || {};
+    const opt = data.materials_optimization || {};
+    const ip = data.ip_radar || {};
+
+    // Check for cross-module flag conditions
+    const redPatents = (ip.patents || []).filter(p => p.relevance === 'red');
+    const hasBestRec = opt.best_recommendation;
+
+    if (redPatents.length > 0 && hasBestRec) {
+      const rec = opt.best_recommendation;
+      flagEl.style.display = 'block';
+      flagEl.innerHTML = `
+        <div class="flag-banner critical">
+          <div class="flag-icon">⚠️</div>
+          <div class="flag-content">
+            <div class="flag-title">Compl.ai has detected a compounded risk</div>
+            <div class="flag-body">
+              The material <strong>${rec.original_material}</strong> sits in a high-activity patent space 
+              AND triggers an extended biocompatibility testing requirement. Acting on this now could save 
+              significant time and cost before you're further into development.
+              <br><br>
+              <strong>Suggested substitution:</strong> ${rec.suggested_material} — this reduces your testing burden 
+              and moves you into a lower IP activity zone.
+            </div>
+            <div class="flag-saving">
+              Estimated cost avoidance: $${rec.net_cost_saved_usd_low?.toLocaleString()}–$${rec.net_cost_saved_usd_high?.toLocaleString()} · 
+              ${rec.net_weeks_saved_low}–${rec.net_weeks_saved_high} weeks saved
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      flagEl.style.display = 'none';
+    }
+  }
+
+  function renderOptimization(opt) {
+    const el = document.getElementById('optimizationBanner');
+    if (!opt.best_recommendation) { el.style.display = 'none'; return; }
+    const rec = opt.best_recommendation;
+    el.style.display = 'block';
+    el.innerHTML = `
+      <div class="optimization-banner">
+        <div class="opt-header">
+          <div class="opt-icon">💡</div>
+          <div class="opt-title">Materials Optimization Opportunity</div>
+        </div>
+        <div class="opt-swap">
+          <span class="opt-material opt-original">${rec.original_material}</span>
+          <span class="opt-arrow">→</span>
+          <span class="opt-material opt-suggested">${rec.suggested_material}</span>
+        </div>
+        <div class="opt-savings">
+          <span class="opt-saving-pill">Save $${rec.net_cost_saved_usd_low?.toLocaleString()}–$${rec.net_cost_saved_usd_high?.toLocaleString()}</span>
+          <span class="opt-saving-pill">${rec.net_weeks_saved_low}–${rec.net_weeks_saved_high} weeks faster</span>
+          ${rec.tests_eliminated?.length ? `<span class="opt-saving-pill">${rec.tests_eliminated.length} tests potentially eliminated</span>` : ''}
+        </div>
+        ${rec.rationale ? `<div class="opt-rationale">${rec.rationale}</div>` : ''}
+        ${rec.predicate_impact ? `<div class="opt-rationale" style="color:var(--yellow);margin-top:0.5rem">⚠️ ${rec.predicate_impact}</div>` : ''}
+      </div>
+    `;
+  }
+
+  function renderPathway(cls) {
+    const el = document.getElementById('pathwayContent');
+    const pathway = cls.regulatory_pathway || 'Unknown';
+    const center = cls.lead_center || '';
+    const confidence = cls.confidence || 0;
+    const rationale = cls.classification_rationale || '';
+    const predicates = cls.predicate_devices || [];
+    const warning = cls.low_confidence_warning;
+
+    el.innerHTML = `
+      <div class="pathway-route">
+        <div class="pathway-center">${center}</div>
+        <div class="pathway-label">${formatPathway(pathway)}</div>
+        ${warning ? `<div class="pathway-detail" style="border-left:3px solid var(--yellow);color:var(--yellow)">${warning}</div>` : ''}
+        <div class="pathway-detail">${rationale || 'Classification complete.'}</div>
+        <div class="confidence-bar">
+          <div class="confidence-label"><span>Classification confidence</span><span>${Math.round(confidence*100)}%</span></div>
+          <div class="confidence-track"><div class="confidence-fill" style="width:${Math.round(confidence*100)}%"></div></div>
+        </div>
+      </div>
+      ${predicates.length ? `
+        <div class="predicate-list">
+          <div class="predicate-label">Potential predicate devices</div>
+          ${predicates.map(p => `
+            <div class="predicate-item">
+              <div class="predicate-knum">${p.k_number}</div>
+              <div class="predicate-name">${p.device_name}</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    `;
+  }
+
+  function renderRoadmap(roadmap) {
+    const el = document.getElementById('roadmapContent');
+    const tests = roadmap.tests || [];
+    const critPath = roadmap.critical_path || [];
+    const costLow = roadmap.total_cost_usd_low || 0;
+    const costHigh = roadmap.total_cost_usd_high || 0;
+    const wkLow = roadmap.total_weeks_low || 0;
+    const wkHigh = roadmap.total_weeks_high || 0;
+    const gap = roadmap.data_gap_analysis || '';
+
+    if (!tests.length) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:0.825rem">No testing roadmap generated.</div>';
+      return;
+    }
+
+    // Sort by phase then critical path
+    const phaseOrder = { pre_submission: 0, submission: 1, post_market: 2 };
+    const sorted = [...tests].sort((a,b) => {
+      const pa = phaseOrder[a.phase] ?? 99;
+      const pb = phaseOrder[b.phase] ?? 99;
+      return pa - pb;
+    });
+
+    el.innerHTML = `
+      <div class="timeline-summary">
+        <div class="timeline-stat">
+          <div class="timeline-stat-val">$${formatCost(costLow)}–${formatCost(costHigh)}</div>
+          <div class="timeline-stat-label">Estimated cost</div>
+        </div>
+        <div class="timeline-stat">
+          <div class="timeline-stat-val">${wkLow}–${wkHigh}</div>
+          <div class="timeline-stat-label">Weeks (critical path)</div>
+        </div>
+      </div>
+      <div class="timeline-track">
+        ${sorted.map(t => `
+          <div class="timeline-item" title="${t.description || ''}">
+            <div class="timeline-phase-dot ${phaseClass(t.phase)}"></div>
+            <div class="timeline-item-name">${t.name}</div>
+            ${t.waivable_with_existing_data ? '<span class="waivable-tag">Waivable</span>' : ''}
+            <div class="timeline-item-weeks">${t.estimated_weeks_low}–${t.estimated_weeks_high}w</div>
+          </div>
+        `).join('')}
+      </div>
+      ${gap ? `
+        <div class="data-gap">
+          <div class="data-gap-label">Data gap analysis</div>
+          <div class="data-gap-text">${gap}</div>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  function renderIP(ip) {
+    const el = document.getElementById('ipContent');
+    const patents = ip.patents || [];
+    const summary = ip.summary || '';
+
+    const redCount = patents.filter(p => p.relevance === 'red').length;
+    const yellowCount = patents.filter(p => p.relevance === 'yellow').length;
+
+    el.innerHTML = `
+      <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+        ${redCount ? `<span class="badge badge-red">⬤ ${redCount} high risk</span>` : ''}
+        ${yellowCount ? `<span class="badge badge-yellow">⬤ ${yellowCount} moderate</span>` : ''}
+        ${patents.length - redCount - yellowCount > 0 ? `<span class="badge badge-green">⬤ ${patents.length - redCount - yellowCount} low concern</span>` : ''}
+      </div>
+      ${summary ? `<div class="ip-summary-box">${summary}</div>` : ''}
+      <div class="patent-list">
+        ${patents.map(p => `
+          <div class="patent-card">
+            <div class="patent-header">
+              <div class="traffic-dot dot-${p.relevance}"></div>
+              <div class="patent-title">${p.title || 'Unknown patent'}</div>
+            </div>
+            <div class="patent-meta">
+              <span class="patent-num">${p.patent_number || ''}</span>
+              ${p.assignee ? `<span class="patent-assignee">· ${p.assignee}</span>` : ''}
+              ${p.is_active === false ? `<span class="badge badge-green" style="font-size:0.6rem">Expired</span>` : ''}
+            </div>
+            <div class="patent-explanation">${p.relevance_explanation || ''}</div>
+            ${(p.concerning_claims||[]).length ? `
+              <div style="margin-top:0.5rem">
+                ${p.concerning_claims.map(c => `<div style="font-size:0.72rem;color:var(--red);margin-top:0.2rem;font-family:var(--mono)">· ${c}</div>`).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>
+      ${!patents.length ? '<div style="color:var(--text-muted);font-size:0.825rem">No patents returned. This may indicate an open IP space, or may reflect API limitations. Manual search on USPTO and Google Patents recommended.</div>' : ''}
+    `;
+  }
+
+  // ── MOCK DATA (for demo when API is unavailable) ──
+  function getMockData(isDemo) {
+    return {
+      classification: {
+        product_category: "combination",
+        lead_center: "CBER",
+        device_class: "unknown",
+        regulatory_pathway: "ind",
+        confidence: 0.92,
+        classification_rationale: "Product is classified as a COMBINATION PRODUCT based on: living cells (cortical organoids) providing the primary therapeutic effect via biological mechanism, combined with a biodegradable polymer scaffold device component. Primary jurisdiction: CBER (Center for Biologics Evaluation and Research). Entry pathway: IND (Investigational New Drug Application) required before any clinical use. The device component (PLGA scaffold) requires separate CDRH review. This is the most complex and expensive regulatory pathway — expect extensive CMC requirements, potency assays, and a detailed Phase I safety-first clinical development plan.",
+        combination_product_components: [
+          "Biologic/cellular component → CBER: IND + BLA required",
+          "Device component → CDRH: 510(k) or PMA clearance required"
+        ],
+        predicate_devices: []
+      },
+      roadmap: {
+        tests: [
+          { id: "RISK_ASSESSMENT", name: "Risk Assessment Documentation", phase: "pre_submission", estimated_weeks_low: 4, estimated_weeks_high: 10, waivable_with_existing_data: false },
+          { id: "CHEM_CHAR_FULL", name: "Full Chemical Characterization (ISO 10993-18)", phase: "pre_submission", estimated_weeks_low: 6, estimated_weeks_high: 14, waivable_with_existing_data: false },
+          { id: "ISO_10993_5", name: "Cytotoxicity (ISO 10993-5)", phase: "pre_submission", estimated_weeks_low: 3, estimated_weeks_high: 6, waivable_with_existing_data: true },
+          { id: "ISO_10993_10_SENS", name: "Sensitization — GPMT + LLNA", phase: "pre_submission", estimated_weeks_low: 6, estimated_weeks_high: 12, waivable_with_existing_data: false },
+          { id: "ISO_10993_6_IMPLANT", name: "Implantation Study (ISO 10993-6)", phase: "pre_submission", estimated_weeks_low: 12, estimated_weeks_high: 32, waivable_with_existing_data: false },
+          { id: "ISO_10993_3_GENO", name: "Genotoxicity Battery (ISO 10993-3)", phase: "pre_submission", estimated_weeks_low: 8, estimated_weeks_high: 16, waivable_with_existing_data: false },
+          { id: "ISO_10993_3_CARCINO", name: "Carcinogenicity Assessment", phase: "pre_submission", estimated_weeks_low: 4, estimated_weeks_high: 12, waivable_with_existing_data: true },
+          { id: "CBER_CMC_PACKAGE", name: "CMC Package — Cell/Gene Therapy (CBER)", phase: "pre_submission", estimated_weeks_low: 26, estimated_weeks_high: 104, waivable_with_existing_data: false },
+          { id: "CBER_PRECLINICAL", name: "Preclinical Safety & Efficacy (CBER)", phase: "pre_submission", estimated_weeks_low: 52, estimated_weeks_high: 156, waivable_with_existing_data: false },
+          { id: "DEGRADATION_ASSESS", name: "Degradation / Absorption Assessment", phase: "pre_submission", estimated_weeks_low: 12, estimated_weeks_high: 40, waivable_with_existing_data: false },
+          { id: "CBER_IND_PREP", name: "IND Application (CBER)", phase: "submission", estimated_weeks_low: 26, estimated_weeks_high: 78, waivable_with_existing_data: false },
+        ],
+        total_cost_usd_low: 850000,
+        total_cost_usd_high: 5200000,
+        total_weeks_low: 78,
+        total_weeks_high: 208,
+        critical_path: ["RISK_ASSESSMENT","CHEM_CHAR_FULL","CBER_CMC_PACKAGE","CBER_PRECLINICAL","CBER_IND_PREP"],
+        data_gap_analysis: "The most time-critical test to initiate immediately is the CBER CMC Package — this gates all subsequent CBER activities and typically takes 6–24 months. Risk assessment must be submitted at the beginning of your biocompatibility section per FDA Section 3D. For the PLGA biodegradable scaffold component, FDA Section 6I requires a pre-test discussion with FDA before commencing degradation studies — schedule this call early. Genotoxicity battery must include all three components per FDA Section 6F: Ames, in vitro mammalian assay (MLA preferred), and in vivo cytogenetics for this novel combination. Sensitization GPMT is mandatory for the novel organoid-polymer combination — LLNA alone is insufficient."
+      },
+      ip_radar: {
+        patents: [
+          {
+            patent_number: "US10456789",
+            title: "Biodegradable neural scaffold with cellular integration for CNS repair",
+            assignee: "Massachusetts Institute of Technology",
+            relevance: "red",
+            is_active: true,
+            relevance_explanation: "Strong claim overlap: this patent covers biodegradable polymer scaffolds seeded with neural progenitor cells for CNS repair applications, which directly reads on your cortical organoid + PLGA scaffold approach. The independent claims cover the polymer matrix + living neural cell combination broadly.",
+            concerning_claims: ["Claim 1: biodegradable polymer matrix comprising living neural cells", "Claim 4: method of treating CNS injury using cell-seeded scaffold"]
+          },
+          {
+            patent_number: "US9876543",
+            title: "Alginate encapsulation of organoids for therapeutic delivery",
+            assignee: "Stanford University",
+            relevance: "yellow",
+            is_active: true,
+            relevance_explanation: "Moderate concern: this patent covers alginate-based encapsulation of organoid structures for therapeutic use. Your use of GMP-grade alginate for organoid encapsulation falls within the broad scope of these claims, though the specific neural application may provide differentiation.",
+            concerning_claims: ["Claim 3: alginate hydrogel encapsulation of three-dimensional organoid structures"]
+          },
+          {
+            patent_number: "US8234567",
+            title: "PLGA scaffold for tissue engineering with controlled degradation",
+            assignee: "Medtronic Inc.",
+            relevance: "yellow",
+            is_active: true,
+            relevance_explanation: "Adjacent technology: Medtronic holds broad claims on PLGA scaffold architectures with controlled degradation profiles in tissue engineering contexts. While not specific to neural applications, the scaffold manufacturing claims may partially read on your device component.",
+            concerning_claims: []
+          },
+          {
+            patent_number: "US7123456",
+            title: "Cortical neuron culture methods for transplantation",
+            assignee: "University of California",
+            relevance: "green",
+            is_active: false,
+            relevance_explanation: "Expired patent — filed 2001, expired 2021. While the technology is related to cortical neuron culture for transplantation, this patent no longer poses an IP risk. May be useful as prior art to challenge any overlapping claims.",
+            concerning_claims: []
+          }
+        ],
+        summary: "The IP landscape for neural scaffold + organoid combination products is moderately crowded, with significant activity from academic institutions (MIT, Stanford, UCSF) and established medtech companies (Medtronic, Integra). The highest-risk patents concern the combination of biodegradable polymer matrices with living neural cells — the core of your approach. Most critical action item: commission a formal Freedom-to-Operate (FTO) analysis from a registered patent attorney focusing on US10456789 and US9876543 before investing further in development. Note: this is directional guidance, not legal advice."
+      },
+      materials_optimization: {
+        best_recommendation: {
+          original_material: "biodegradable polymer scaffold",
+          suggested_material: "PEEK (Polyether Ether Ketone)",
+          net_cost_saved_usd_low: 35000,
+          net_cost_saved_usd_high: 90000,
+          net_weeks_saved_low: 4,
+          net_weeks_saved_high: 12,
+          tests_eliminated: [{ name: "Degradation / Absorption Assessment" }, { name: "Full Chemical Characterization (ISO 10993-18)" }],
+          rationale: "Switching from a novel biodegradable polymer scaffold to medical-grade PEEK for the device component leverages PEEK's extensive published biocompatibility history — eliminating the degradation assessment requirement and potentially reducing the full chemical characterization scope. PEEK has ISO 10993 data packages available from manufacturers including Victrex and Invibio, and has cleared numerous spinal and neural device 510(k)s. This also moves you out of the high-activity biodegradable scaffold patent space. Caveat: PEEK is not biodegradable, so this changes your device design concept — only viable if permanent scaffold is clinically acceptable.",
+          predicate_impact: null
+        },
+        summary: "Best recommendation: switch from biodegradable polymer scaffold to PEEK for the device component, saving $35,000–$90,000 and 4–12 weeks by leveraging existing biocompatibility data. However, this changes the device from biodegradable to permanent — confirm this is clinically acceptable before proceeding."
+      }
+    };
+  }
+
+  // ── NAVIGATION ──
+  function showPage(id) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    window.scrollTo(0,0);
+  }
+
+  function goBack() {
+    showPage('landing');
+  }
+
+  // ── HELPERS ──
+  function formatPathway(p) {
+    const map = {
+      'ind': 'IND Pathway', 'bla': 'BLA Pathway',
+      'k510': '510(k) Pathway', 'pma': 'PMA Pathway',
+      'de_novo': 'De Novo Pathway', 'exempt': '510(k) Exempt',
+      'combination_product': 'Combination Product', 'unknown': 'Pathway TBD'
+    };
+    return map[p?.toLowerCase()] || p || 'Unknown';
+  }
+
+  function formatCategory(c) {
+    const map = {
+      'cell_gene_therapy': 'Cell/Gene Therapy',
+      'medical_device': 'Medical Device',
+      'diagnostic_ivd': 'IVD Diagnostic',
+      'diagnostic_invivo': 'In Vivo Diagnostic',
+      'combination': 'Combination Product',
+      'drug': 'Drug',
+    };
+    return map[c] || c;
+  }
+
+  function phaseClass(phase) {
+    if (phase === 'submission') return 'phase-sub';
+    if (phase === 'post_market') return 'phase-post';
+    return 'phase-pre';
+  }
+
+  function formatCost(n) {
+    if (!n) return '0';
+    if (n >= 1000000) return `${(n/1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n/1000).toFixed(0)}K`;
+    return n.toString();
+  }
+</script>
+</body>
+</html>

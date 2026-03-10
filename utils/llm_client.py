@@ -87,3 +87,19 @@ def call_llm_for_json(
     except json.JSONDecodeError as e:
         logger.error("JSON parse failed. Raw response:\n%s", raw)
         raise ValueError(f"LLM returned non-JSON output: {e}") from e
+
+
+def call_llm_chat(
+    system_prompt: str,
+    messages: list[dict],
+    max_tokens: int = 512,
+) -> str:
+    """Multi-turn conversation with Claude. messages = [{role, content}, ...]"""
+    client = _get_client()
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=max_tokens,
+        system=system_prompt,
+        messages=messages,
+    )
+    return response.content[0].text

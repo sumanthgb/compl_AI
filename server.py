@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import queue as stdlib_queue
+import re
 import threading
 from typing import Optional
 
@@ -36,6 +37,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from pipeline import run_full_pipeline, PipelineResult
+from utils.llm_client import call_llm_chat
 
 # Load environment variables from .env file
 load_dotenv()
@@ -94,6 +96,49 @@ class HealthResponse(BaseModel):
     status: str
     api_key_configured: bool
     version: str
+
+
+class ChatMessage(BaseModel):
+    role: str   # "user" or "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    ready: bool = False
+    description: Optional[str] = None
+
+
+_CHAT_SYSTEM = """\
+You are a regulatory intelligence assistant for compl_AI, helping early-stage biotech \
+and medtech researchers describe their product for FDA regulatory analysis.
+
+Your job: have a warm, encouraging conversation to understand their product well enough \
+to generate a full regulatory analysis. You are looking for:
+1. What the product is and what clinical problem it solves
+2. Materials or active components
+3. How it contacts the body (on the skin, implanted, ingested, inhaled, blood contact, etc.)
+4. Duration of body contact (minutes? months? permanent?)
+5. Target patient population
+
+Guidelines:
+- Encourage tentative or half-baked ideas — imprecision is fine, you will help shape it
+- Ask 1–2 focused questions per turn, not a laundry list
+- After 2–3 exchanges with reasonable information, naturally offer to run the full analysis
+- Be concise; this is a quick intake, not a consultation
+
+When you have enough information (even if incomplete), end your message with EXACTLY this \
+block and nothing after it:
+
+<READY>{"description": "your synthesized product description in 20–200 words"}</READY>
+
+The description should be a clear clinical paragraph combining all gathered info, \
+suitable for FDA regulatory analysis.\
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +296,38 @@ def classify_only(request: AnalyzeRequest):
     except Exception as e:
         logger.error("Classification failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(request: ChatRequest):
+    """
+    Conversational intake endpoint.
+    Accepts a message history and returns Claude's next reply.
+    When Claude has gathered enough product information it appends a
+    <READY>{...}</READY> block; the endpoint strips that block, sets
+    ready=True, and returns the synthesised description separately.
+    """
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured.")
+
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    try:
+        reply_text = call_llm_chat(_CHAT_SYSTEM, messages, max_tokens=600)
+    except Exception as exc:
+        logger.error("Chat LLM failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    ready_match = re.search(r"<READY>\s*(\{.*?\})\s*</READY>", reply_text, re.DOTALL)
+    if ready_match:
+        try:
+            data = json.loads(ready_match.group(1))
+            description = data.get("description", "")
+            visible_reply = reply_text[: ready_match.start()].strip()
+            return ChatResponse(reply=visible_reply, ready=True, description=description)
+        except Exception:
+            pass  # malformed JSON — fall through and return as plain message
+
+    return ChatResponse(reply=reply_text, ready=False)
 
 
 # ---------------------------------------------------------------------------

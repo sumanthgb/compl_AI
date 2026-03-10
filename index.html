@@ -147,6 +147,154 @@ textarea#description::placeholder { color: var(--faint); }
 #submit-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
 /* =====================================================================
+   CHAT SECTION
+   ===================================================================== */
+#chat-section { max-width: 680px; margin: 2.5rem auto; }
+
+#chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-height: 160px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 0.5rem 0 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.chat-msg {
+  max-width: 84%;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-lg);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+.chat-msg.assistant {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  align-self: flex-start;
+  border-bottom-left-radius: 3px;
+}
+.chat-msg.user {
+  background: rgba(56,189,248,.1);
+  border: 1px solid rgba(56,189,248,.22);
+  align-self: flex-end;
+  border-bottom-right-radius: 3px;
+}
+.chat-typing {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 0.6rem 0.9rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: 3px;
+  align-self: flex-start;
+}
+.chat-typing span {
+  width: 6px; height: 6px;
+  background: var(--muted);
+  border-radius: 50%;
+  animation: chatbounce 1.2s ease-in-out infinite;
+}
+.chat-typing span:nth-child(2) { animation-delay: 0.2s; }
+.chat-typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes chatbounce { 0%,60%,100% { transform:translateY(0); } 30% { transform:translateY(-5px); } }
+
+.chat-input-row {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-end;
+}
+textarea#chat-input {
+  flex: 1;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.65rem 0.9rem;
+  resize: none;
+  transition: border-color 0.2s;
+}
+textarea#chat-input:focus { outline: none; border-color: var(--accent); }
+textarea#chat-input::placeholder { color: var(--faint); }
+
+#chat-send-btn {
+  padding: 0.65rem 1.25rem;
+  background: linear-gradient(135deg, var(--accent-d), var(--teal));
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+#chat-send-btn:hover { opacity: 0.85; }
+#chat-send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+#chat-ready-bar {
+  margin-top: 1.1rem;
+  padding: 1rem 1.15rem;
+  background: rgba(52,211,153,.06);
+  border: 1px solid rgba(52,211,153,.28);
+  border-radius: var(--radius);
+}
+.chat-ready-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--green);
+  margin-bottom: 0.45rem;
+}
+textarea#chat-desc {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  resize: vertical;
+  padding: 0;
+  min-height: 64px;
+  line-height: 1.55;
+}
+textarea#chat-desc:focus { outline: none; }
+.chat-ready-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.8rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#chat-analyze-btn {
+  padding: 0.65rem 1.5rem;
+  background: linear-gradient(135deg, var(--accent-d), var(--teal));
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+#chat-analyze-btn:hover { opacity: 0.85; }
+
+.chat-footer {
+  text-align: right;
+  margin-top: 0.55rem;
+}
+.skip-link { color: var(--faint); font-size: 0.76rem; text-decoration: none; }
+.skip-link:hover { color: var(--accent); }
+
+/* =====================================================================
    LOADING SECTION
    ===================================================================== */
 #loading-section { max-width: 580px; margin: 3.5rem auto; }
@@ -465,8 +613,29 @@ table.dt tr.crit-row td { background: rgba(248,113,113,.04); }
   <div class="tagline">FDA Regulatory &amp; IP Roadmap Generator</div>
 </header>
 
+<!-- ===== CHAT ===== -->
+<div id="chat-section" class="container">
+  <div id="chat-messages"></div>
+  <div class="chat-input-row">
+    <textarea id="chat-input" rows="2" placeholder="Tell me about your product idea…" onkeydown="chatKeydown(event)"></textarea>
+    <button id="chat-send-btn" onclick="sendChat()">Send</button>
+  </div>
+  <div id="chat-ready-bar" style="display:none">
+    <div class="chat-ready-label">Ready to Analyze — edit if needed</div>
+    <textarea id="chat-desc" rows="3"></textarea>
+    <div class="chat-ready-actions">
+      <button id="chat-analyze-btn" onclick="runFromChat()">Run Full Analysis →</button>
+      <label class="opt-label"><input type="checkbox" id="chat-run-ip" checked> IP Radar</label>
+      <label class="opt-label"><input type="checkbox" id="chat-run-mat" checked> Materials</label>
+    </div>
+  </div>
+  <div class="chat-footer">
+    <a href="#" onclick="skipChat(); return false;" class="skip-link">Skip → enter description directly</a>
+  </div>
+</div>
+
 <!-- ===== INPUT ===== -->
-<div id="input-section" class="container">
+<div id="input-section" style="display:none" class="container">
   <p class="input-title">Describe your medical device or biotech product</p>
   <textarea id="description" placeholder="Example: A resorbable cortical organoid scaffold made from PLGA intended for neural tissue engineering research. The device is implanted subdurally for up to 6 months to study neuroregeneration in rodent models before human trials."></textarea>
   <div class="char-count"><span id="char-num">0</span> / 5000</div>
@@ -561,8 +730,111 @@ function relBadge(r) {
    SECTION VISIBILITY
    ================================================================ */
 function show(id) {
-  ['input-section','loading-section','error-section','results-section']
+  ['chat-section','input-section','loading-section','error-section','results-section']
     .forEach(s => document.getElementById(s).style.display = (s === id ? '' : 'none'));
+}
+
+/* ================================================================
+   CHAT FLOW
+   ================================================================ */
+let chatHistory = [];
+
+function chatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+}
+
+function appendMsg(role, html) {
+  const el = document.createElement('div');
+  el.className = 'chat-msg ' + role;
+  el.innerHTML = html;
+  document.getElementById('chat-messages').appendChild(el);
+  el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  return el;
+}
+
+function showTyping() {
+  const el = document.createElement('div');
+  el.id = 'chat-typing';
+  el.className = 'chat-typing';
+  el.innerHTML = '<span></span><span></span><span></span>';
+  document.getElementById('chat-messages').appendChild(el);
+  el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function removeTyping() {
+  const el = document.getElementById('chat-typing');
+  if (el) el.remove();
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  appendMsg('user', escHtml(text));
+  chatHistory.push({ role: 'user', content: text });
+  input.value = '';
+  input.style.height = '';
+
+  document.getElementById('chat-send-btn').disabled = true;
+  showTyping();
+
+  try {
+    const res = await fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: chatHistory }),
+    });
+    const data = await res.json();
+    removeTyping();
+
+    if (!res.ok) {
+      appendMsg('assistant', '<em style="color:var(--red)">Error: ' + escHtml(data.detail || 'Request failed') + '</em>');
+    } else {
+      if (data.reply) {
+        appendMsg('assistant', llm(data.reply));
+        chatHistory.push({ role: 'assistant', content: data.reply });
+      }
+      if (data.ready && data.description) {
+        document.getElementById('chat-desc').value = data.description;
+        document.getElementById('chat-ready-bar').style.display = '';
+      }
+    }
+  } catch (err) {
+    removeTyping();
+    appendMsg('assistant', '<em style="color:var(--red)">Network error — please try again.</em>');
+  }
+
+  document.getElementById('chat-send-btn').disabled = false;
+  document.getElementById('chat-input').focus();
+}
+
+function runFromChat() {
+  const desc = document.getElementById('chat-desc').value.trim();
+  if (!desc) return;
+  document.getElementById('description').value = desc;
+  document.getElementById('run-ip').checked  = document.getElementById('chat-run-ip').checked;
+  document.getElementById('run-mat').checked = document.getElementById('chat-run-mat').checked;
+  handleSubmit();
+}
+
+function skipChat() {
+  show('input-section');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function initChat() {
+  chatHistory = [];
+  document.getElementById('chat-messages').innerHTML = '';
+  document.getElementById('chat-input').value = '';
+  document.getElementById('chat-ready-bar').style.display = 'none';
+  appendMsg('assistant',
+    "Hi! I'm compl_AI. Tell me about your product idea — even if it's rough or early-stage. " +
+    "What are you working on?"
+  );
 }
 
 /* ================================================================
@@ -724,7 +996,8 @@ function resetApp() {
   document.querySelector('.tab-btn[data-tab="overview"]').classList.add('active');
   document.getElementById('tab-overview').classList.add('active');
 
-  show('input-section');
+  initChat();
+  show('chat-section');
 }
 
 /* ================================================================
@@ -1232,6 +1505,9 @@ function toggleCharts(cid, btn) {
     });
   }
 }
+
+// Boot
+initChat();
 </script>
 </body>
 </html>

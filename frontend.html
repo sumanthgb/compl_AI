@@ -6,6 +6,7 @@
 <title>compl_AI — FDA Regulatory Roadmap Generator</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <style>
 /* =====================================================================
    RESET & TOKENS
@@ -468,7 +469,7 @@ table.dt tr.crit-row td { background: rgba(248,113,113,.04); }
 <!-- ===== INPUT ===== -->
 <div id="input-section" class="container">
   <p class="input-title">Describe your medical device or biotech product</p>
-  <textarea id="description" placeholder="Example: A resorbable cortical organoid scaffold made from PLGA intended for neural tissue engineering research. The device is implanted subdurally for up to 6 months to study neuroregeneration in rodent models before human trials."></textarea>
+  <textarea id="description"></textarea>
   <div class="char-count"><span id="char-num">0</span> / 5000</div>
   <div class="options-row">
     <label class="opt-label"><input type="checkbox" id="run-ip" checked> Run IP Radar</label>
@@ -1035,6 +1036,10 @@ function renderMaterials(data) {
       blWkLow,  blWkHigh,
       optWkLow:  Math.max(0, blWkLow  - rec.net_weeks_saved_high),
       optWkHigh: Math.max(0, blWkHigh - rec.net_weeks_saved_low),
+      costSavLow:  rec.net_cost_saved_usd_low,
+      costSavHigh: rec.net_cost_saved_usd_high,
+      wkSavLow:    rec.net_weeks_saved_low,
+      wkSavHigh:   rec.net_weeks_saved_high,
       origLabel: rec.original_material,
       suggLabel: rec.suggested_material,
       costChart: null,
@@ -1127,9 +1132,14 @@ function renderMaterials(data) {
       </div>`;
     }).join('')}`;
 
-  /* Bind chart toggle buttons after innerHTML is set */
+  /* Bind chart toggle buttons after innerHTML is set, then auto-expand all */
   el.querySelectorAll('.chart-btn').forEach(btn => {
     btn.addEventListener('click', () => toggleCharts(btn.dataset.cid, btn));
+  });
+
+  /* Auto-expand every chart immediately — no click required */
+  requestAnimationFrame(() => {
+    el.querySelectorAll('.chart-btn').forEach(btn => toggleCharts(btn.dataset.cid, btn));
   });
 }
 
@@ -1152,10 +1162,28 @@ function toggleCharts(cid, btn) {
   const s = chartStore[cid];
   if (!s || s.costChart) return;   // already drawn
 
-  const blCostMid = (s.blCostLow  + s.blCostHigh)  / 2;
-  const optCostMid= (s.optCostLow + s.optCostHigh) / 2;
-  const blWkMid   = (s.blWkLow    + s.blWkHigh)    / 2;
-  const optWkMid  = (s.optWkLow   + s.optWkHigh)   / 2;
+  const optCostMid = (s.optCostLow + s.optCostHigh) / 2;
+  const optWkMid   = (s.optWkLow   + s.optWkHigh)   / 2;
+
+  const fmtC = v => v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : `$${Math.round(v/1000)}k`;
+
+  const savingsAnnotation = (xMin, xMax, y, label) => ({
+    type: 'line',
+    xMin, xMax,
+    yMin: y, yMax: y,
+    borderColor: 'rgba(251,113,133,.85)',
+    borderWidth: 1.5,
+    arrowHeads: { start: { display: true, length: 7, borderColor: 'rgba(251,113,133,.85)' } },
+    label: {
+      display: true,
+      content: label,
+      position: 'center',
+      yAdjust: -13,
+      backgroundColor: 'transparent',
+      color: 'rgba(251,113,133,1)',
+      font: { size: 10, weight: '600' },
+    },
+  });
 
   const sharedOpts = {
     responsive: true,
@@ -1171,11 +1199,11 @@ function toggleCharts(cid, btn) {
       data: {
         labels: [s.origLabel, s.suggLabel],
         datasets: [{
-          data: [blCostMid, optCostMid],
-          backgroundColor: ['rgba(248,113,113,.65)', 'rgba(52,211,153,.65)'],
+          data: [[s.blCostLow, s.blCostHigh], [s.optCostLow, s.optCostHigh]],
+          backgroundColor: ['rgba(248,113,113,.55)', 'rgba(52,211,153,.55)'],
           borderColor:     ['rgba(248,113,113,1)',   'rgba(52,211,153,1)'],
           borderWidth: 1,
-          borderRadius: 6,
+          borderRadius: 4,
         }],
       },
       options: {
@@ -1183,15 +1211,21 @@ function toggleCharts(cid, btn) {
         plugins: {
           ...sharedOpts.plugins,
           tooltip: { callbacks: { label: ctx => {
-            const v = ctx.raw;
-            return v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : `$${Math.round(v/1000)}k`;
+            const [lo, hi] = ctx.raw;
+            return `${fmtC(lo)} – ${fmtC(hi)}`;
           }}},
+          annotation: { annotations: {
+            savArrow: savingsAnnotation(
+              s.origLabel, s.suggLabel, optCostMid,
+              `Save ${fmtC(s.costSavLow)}–${fmtC(s.costSavHigh)}`
+            ),
+          }},
         },
         scales: {
           y: {
             beginAtZero: true,
             grid: { color: 'rgba(255,255,255,.04)' },
-            ticks: { color: '#8892a4', callback: v => v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : `$${Math.round(v/1000)}k` },
+            ticks: { color: '#8892a4', callback: v => fmtC(v) },
           },
           x: { grid: { display: false }, ticks: { color: '#8892a4', font: { size: 11 } } },
         },
@@ -1207,18 +1241,27 @@ function toggleCharts(cid, btn) {
       data: {
         labels: [s.origLabel, s.suggLabel],
         datasets: [{
-          data: [blWkMid, optWkMid],
-          backgroundColor: ['rgba(248,113,113,.65)', 'rgba(56,189,248,.65)'],
+          data: [[s.blWkLow, s.blWkHigh], [s.optWkLow, s.optWkHigh]],
+          backgroundColor: ['rgba(248,113,113,.55)', 'rgba(56,189,248,.55)'],
           borderColor:     ['rgba(248,113,113,1)',   'rgba(56,189,248,1)'],
           borderWidth: 1,
-          borderRadius: 6,
+          borderRadius: 4,
         }],
       },
       options: {
         ...sharedOpts,
         plugins: {
           ...sharedOpts.plugins,
-          tooltip: { callbacks: { label: ctx => `${ctx.raw.toFixed(1)} weeks` } },
+          tooltip: { callbacks: { label: ctx => {
+            const [lo, hi] = ctx.raw;
+            return `${lo.toFixed(0)}–${hi.toFixed(0)} weeks`;
+          }}},
+          annotation: { annotations: {
+            savArrow: savingsAnnotation(
+              s.origLabel, s.suggLabel, optWkMid,
+              `Save ${s.wkSavLow}–${s.wkSavHigh} wks`
+            ),
+          }},
         },
         scales: {
           y: {

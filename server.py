@@ -4,16 +4,14 @@ FastAPI Server
 Exposes the four-system pipeline as a REST API.
 
 Endpoints:
-  POST /analyze       — Full pipeline run, returns complete result
-  GET  /health        — Health check
-  GET  /classify      — Classification only (fast, for frontend pre-flight)
+  POST /analyze         — Full pipeline run, returns complete result
+  POST /analyze/stream  — Full pipeline with Server-Sent Events for real-time progress
+  GET  /health          — Health check
+  POST /classify        — Classification only (fast, for frontend pre-flight)
 
 NEXT STEPS:
   - Add authentication (API key or OAuth2) before any public deployment.
   - Add rate limiting (slowapi) to prevent abuse.
-  - Add a POST /analyze/stream endpoint using Server-Sent Events (SSE)
-    so the frontend can show progress as each system completes.
-    FastAPI supports this natively with StreamingResponse.
   - Add request ID tracking and structured logging (JSON logs to stdout)
     for production observability.
   - Add a database layer to persist results and enable history/replay.
@@ -23,13 +21,18 @@ NEXT STEPS:
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
+import queue as stdlib_queue
+import threading
 from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from pipeline import run_full_pipeline, PipelineResult
@@ -142,6 +145,90 @@ def analyze(request: AnalyzeRequest):
         response_dict.pop("materials_optimization", None)
 
     return response_dict
+
+
+@app.post("/analyze/stream")
+async def analyze_stream(request: AnalyzeRequest):
+    """
+    Full pipeline with Server-Sent Events for real-time progress updates.
+
+    Streams JSON events as each pipeline stage completes:
+      {"type": "progress", "step": "classification", "message": "...", "status": "running"}
+      {"type": "progress", "step": "roadmap", "message": "...", "status": "done"}
+      {"type": "result", "data": { ...full pipeline result... }}
+      {"type": "error", "message": "..."}
+
+    Typical total time: 45-90 seconds.
+    """
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="ANTHROPIC_API_KEY not configured. Set this environment variable to use the API.",
+        )
+
+    logger.info(
+        "Received analyze/stream request (description length=%d)", len(request.description)
+    )
+
+    # Thread-safe queue for progress events; None is the sentinel value.
+    progress_q: stdlib_queue.Queue = stdlib_queue.Queue()
+
+    def progress_callback(event: dict) -> None:
+        progress_q.put(event)
+
+    def run_pipeline() -> None:
+        try:
+            result = run_full_pipeline(
+                request.description,
+                progress_callback=progress_callback,
+            )
+            if not result.success:
+                progress_q.put({
+                    "type": "error",
+                    "message": "Pipeline failed to complete minimum required steps.",
+                    "errors": result.errors,
+                })
+            else:
+                response = result.to_dict()
+                if not request.run_ip_radar:
+                    response.pop("ip_radar", None)
+                if not request.run_materials_optimization:
+                    response.pop("materials_optimization", None)
+                progress_q.put({"type": "result", "data": response})
+        except Exception as exc:
+            logger.error("Stream pipeline failed: %s", exc, exc_info=True)
+            progress_q.put({"type": "error", "message": str(exc)})
+        finally:
+            progress_q.put(None)  # Sentinel: stream is complete
+
+    # Run pipeline in a background daemon thread so it doesn't block the event loop.
+    thread = threading.Thread(target=run_pipeline, daemon=True)
+    thread.start()
+
+    async def event_stream():
+        while True:
+            # Poll the thread-safe queue without blocking the async event loop.
+            try:
+                event = progress_q.get_nowait()
+            except stdlib_queue.Empty:
+                await asyncio.sleep(0.1)
+                continue
+
+            if event is None:
+                # Sentinel received — pipeline is complete.
+                break
+
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # Disable Nginx buffering if behind a proxy
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/classify")

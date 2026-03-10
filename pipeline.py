@@ -8,6 +8,7 @@ The orchestrator handles:
   - Parallel execution where systems are independent (IP radar runs in parallel)
   - Error handling and partial result recovery
   - Logging and timing
+  - Optional progress callbacks for SSE streaming
 
 Usage:
     from pipeline import run_full_pipeline
@@ -16,8 +17,6 @@ Usage:
 NEXT STEPS:
   - Add a job queue (Celery + Redis) so long-running analyses don't block HTTP
     requests. The full pipeline can take 30-90s due to LLM calls + API fetches.
-  - Add a WebSocket endpoint so the frontend gets streaming progress updates
-    as each system completes.
   - Add result persistence: store every pipeline run in PostgreSQL with the
     user's description, all intermediate results, and the final output.
     This builds your dataset for future fine-tuning.
@@ -29,12 +28,11 @@ NEXT STEPS:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from systems.classification_engine import classify_device
 from systems.roadmap_generator import generate_roadmap
@@ -93,7 +91,10 @@ class PipelineResult:
         return result
 
 
-def run_full_pipeline(raw_description: str) -> PipelineResult:
+def run_full_pipeline(
+    raw_description: str,
+    progress_callback: Optional[Callable[[dict], None]] = None,
+) -> PipelineResult:
     """
     Execute all four systems in the correct order with parallelism where possible.
 
@@ -104,13 +105,37 @@ def run_full_pipeline(raw_description: str) -> PipelineResult:
       3. Materials optimization (System 4) — depends on roadmap
 
     Systems 2 and 3 run in parallel using a thread pool.
+
+    Args:
+        raw_description: Plain-language product description.
+        progress_callback: Optional callable that receives progress event dicts.
+            Called from both the main thread and worker threads — must be thread-safe.
+            Event format: {"type": "progress", "step": str, "message": str, "status": str}
+            where status is "running" | "done" | "error".
     """
+
+    def emit(step: str, message: str, status: str = "running") -> None:
+        """Thread-safe progress event emitter. Never raises."""
+        if progress_callback is None:
+            return
+        try:
+            progress_callback({
+                "type": "progress",
+                "step": step,
+                "message": message,
+                "status": status,
+            })
+        except Exception as cb_err:
+            logger.warning("[Pipeline] Progress callback raised: %s", cb_err)
+
     result = PipelineResult(raw_description=raw_description)
     start_time = time.time()
 
     # ---- Step 1: Classification ----
+    emit("classification", "Extracting product attributes from description...")
     logger.info("[Pipeline] Step 1: Classification")
     try:
+        emit("classification", "Querying FDA classification database...")
         result.classification = classify_device(raw_description)
         logger.info(
             "[Pipeline] Classification complete: %s / %s (confidence=%.2f)",
@@ -118,17 +143,28 @@ def run_full_pipeline(raw_description: str) -> PipelineResult:
             result.classification.regulatory_pathway,
             result.classification.confidence,
         )
+        emit(
+            "classification",
+            f"Classified: {result.classification.device_class} → "
+            f"{result.classification.regulatory_pathway} "
+            f"(confidence: {result.classification.confidence:.0%})",
+            "done",
+        )
     except Exception as e:
         logger.error("[Pipeline] Classification failed: %s", e, exc_info=True)
         result.errors["classification"] = str(e)
+        emit("classification", f"Classification failed: {e}", "error")
         result.elapsed_seconds = time.time() - start_time
         return result  # Cannot continue without classification
 
     # ---- Step 2 + 3: Roadmap and IP Radar in parallel ----
     logger.info("[Pipeline] Step 2+3: Roadmap generation and IP radar (parallel)")
+    emit("roadmap", "Applying ISO 10993-1:2018 biocompatibility matrix...")
+    emit("ip_radar", "Generating patent search queries...")
 
     def run_roadmap():
         try:
+            emit("roadmap", "Building testing dependency graph and critical path...")
             roadmap = generate_roadmap(result.classification)
             logger.info(
                 "[Pipeline] Roadmap complete: %d tests, $%s–$%s, %s–%s weeks",
@@ -138,14 +174,23 @@ def run_full_pipeline(raw_description: str) -> PipelineResult:
                 roadmap.total_weeks_low,
                 roadmap.total_weeks_high,
             )
+            emit(
+                "roadmap",
+                f"Roadmap built: {len(roadmap.tests)} tests, "
+                f"${roadmap.total_cost_usd_low:,}–${roadmap.total_cost_usd_high:,}, "
+                f"{roadmap.total_weeks_low}–{roadmap.total_weeks_high} weeks",
+                "done",
+            )
             return roadmap
         except Exception as e:
             logger.error("[Pipeline] Roadmap generation failed: %s", e, exc_info=True)
             result.errors["roadmap"] = str(e)
+            emit("roadmap", f"Roadmap generation failed: {e}", "error")
             return None
 
     def run_ip_radar_task():
         try:
+            emit("ip_radar", "Searching USPTO patent database...")
             ip_result = run_ip_radar(result.classification.product_profile)
             red_count = sum(1 for p in ip_result.patents if p.relevance.value == "red")
             logger.info(
@@ -153,10 +198,17 @@ def run_full_pipeline(raw_description: str) -> PipelineResult:
                 len(ip_result.patents),
                 red_count,
             )
+            emit(
+                "ip_radar",
+                f"IP analysis complete: {len(ip_result.patents)} patents found, "
+                f"{red_count} high-risk",
+                "done",
+            )
             return ip_result
         except Exception as e:
             logger.error("[Pipeline] IP radar failed: %s", e, exc_info=True)
             result.errors["ip_radar"] = str(e)
+            emit("ip_radar", f"IP radar failed: {e}", "error")
             return None
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -167,14 +219,23 @@ def run_full_pipeline(raw_description: str) -> PipelineResult:
 
     # ---- Step 4: Materials optimization ----
     if result.roadmap:
+        emit("materials", "Evaluating material substitution candidates...")
         logger.info("[Pipeline] Step 4: Materials optimization")
         try:
+            emit("materials", "Simulating alternative testing roadmaps...")
             result.materials_optimization = optimize_materials(result.roadmap)
             rec_count = len(result.materials_optimization.recommendations)
             logger.info("[Pipeline] Materials optimization complete: %d recommendations", rec_count)
+            emit(
+                "materials",
+                f"Material optimization complete: {rec_count} "
+                f"recommendation{'s' if rec_count != 1 else ''} identified",
+                "done",
+            )
         except Exception as e:
             logger.error("[Pipeline] Materials optimization failed: %s", e, exc_info=True)
             result.errors["materials_optimization"] = str(e)
+            emit("materials", f"Materials optimization failed: {e}", "error")
 
     result.elapsed_seconds = time.time() - start_time
     logger.info(

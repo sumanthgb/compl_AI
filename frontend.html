@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>compl_AI — FDA Regulatory Roadmap Generator</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* =====================================================================
+   RESET & TOKENS
+   ===================================================================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:           #0b0d1a;
+  --bg-card:      #12152b;
+  --bg-hover:     #171b35;
+  --border:       #232644;
+  --border-hi:    #363b62;
+  --text:         #e2e8f0;
+  --muted:        #8892a4;
+  --faint:        #404660;
+  --accent:       #38bdf8;
+  --accent-d:     #0ea5e9;
+  --teal:         #2dd4bf;
+  --green:        #34d399;
+  --amber:        #fbbf24;
+  --red:          #f87171;
+  --purple:       #a78bfa;
+  --radius:       10px;
+  --radius-lg:    14px;
+}
+
+html { font-size: 16px; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* =====================================================================
+   HEADER
+   ===================================================================== */
+header {
+  text-align: center;
+  padding: 3rem 1.5rem 2rem;
+  border-bottom: 1px solid var(--border);
+}
+.logo {
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  background: linear-gradient(130deg, var(--accent) 0%, var(--teal) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.tagline {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 0.35rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* =====================================================================
+   LAYOUT
+   ===================================================================== */
+.container { max-width: 920px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+/* =====================================================================
+   INPUT SECTION
+   ===================================================================== */
+#input-section { max-width: 680px; margin: 3rem auto; }
+
+.input-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 1.25rem;
+  color: var(--text);
+}
+
+textarea#description {
+  width: 100%;
+  min-height: 155px;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 1rem 1.2rem;
+  resize: vertical;
+  transition: border-color 0.2s;
+  line-height: 1.65;
+}
+textarea#description:focus { outline: none; border-color: var(--accent); }
+textarea#description::placeholder { color: var(--faint); }
+
+.char-count {
+  text-align: right;
+  font-size: 0.72rem;
+  color: var(--faint);
+  margin-top: 0.35rem;
+}
+.char-count.warn { color: var(--amber); }
+
+.options-row {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  padding: 0 0.1rem;
+}
+.opt-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.875rem;
+  user-select: none;
+}
+.opt-label input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+#submit-btn {
+  display: block;
+  width: 100%;
+  margin-top: 1.25rem;
+  padding: 0.85rem 2rem;
+  background: linear-gradient(135deg, var(--accent-d), var(--teal));
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: opacity 0.2s, transform 0.1s;
+}
+#submit-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+#submit-btn:active { transform: translateY(0); }
+#submit-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+/* =====================================================================
+   LOADING SECTION
+   ===================================================================== */
+#loading-section { max-width: 580px; margin: 3.5rem auto; }
+
+.loading-header { text-align: center; margin-bottom: 2.25rem; }
+
+.spinner-ring {
+  width: 52px; height: 52px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  margin: 0 auto 1.25rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.35rem; }
+.loading-sub { font-size: 0.82rem; color: var(--muted); }
+
+.progress-steps { display: flex; flex-direction: column; gap: 0.55rem; }
+
+.p-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.3s, background 0.3s;
+}
+.p-step.running { border-color: var(--accent); background: rgba(56,189,248,.05); }
+.p-step.done    { border-color: var(--green);  background: rgba(52,211,153,.05); }
+.p-step.error   { border-color: var(--red);    background: rgba(248,113,113,.05); }
+
+.p-icon { flex-shrink: 0; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+.p-spinner { width: 15px; height: 15px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+.p-check { color: var(--green); font-size: 0.95rem; font-weight: 700; }
+.p-x    { color: var(--red);   font-size: 0.95rem; font-weight: 700; }
+.p-dot  { width: 7px; height: 7px; background: var(--faint); border-radius: 50%; }
+
+.p-body { flex: 1; min-width: 0; }
+.p-name    { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 0.15rem; }
+.p-message { font-size: 0.85rem; color: var(--text); word-break: break-word; }
+.p-elapsed { font-size: 0.7rem; color: var(--faint); margin-top: 0.15rem; font-family: monospace; }
+
+/* =====================================================================
+   CARDS & SHARED COMPONENTS
+   ===================================================================== */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.4rem 1.5rem;
+  margin-bottom: 1.1rem;
+}
+.card-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 0.8rem;
+}
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+@media (max-width: 640px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.2rem;
+}
+.stat-label { font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 0.35rem; }
+.stat-value { font-size: 1.35rem; font-weight: 800; line-height: 1.15; }
+.stat-sub   { font-size: 0.72rem; color: var(--muted); margin-top: 0.25rem; }
+
+.conf-bar { height: 5px; background: var(--border); border-radius: 3px; margin-top: 0.5rem; overflow: hidden; }
+.conf-fill { height: 100%; background: linear-gradient(90deg, var(--amber), var(--green)); border-radius: 3px; transition: width 1.2s ease; }
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18em 0.6em;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.bg-green  { background: rgba(52,211,153,.15); color: var(--green);  border: 1px solid rgba(52,211,153,.3); }
+.bg-amber  { background: rgba(251,191,36,.15); color: var(--amber);  border: 1px solid rgba(251,191,36,.3); }
+.bg-red    { background: rgba(248,113,113,.15); color: var(--red);   border: 1px solid rgba(248,113,113,.3); }
+.bg-blue   { background: rgba(56,189,248,.15);  color: var(--accent); border: 1px solid rgba(56,189,248,.3); }
+.bg-teal   { background: rgba(45,212,191,.15);  color: var(--teal);   border: 1px solid rgba(45,212,191,.3); }
+.bg-purple { background: rgba(167,139,250,.15); color: var(--purple); border: 1px solid rgba(167,139,250,.3); }
+
+/* =====================================================================
+   TABS
+   ===================================================================== */
+.tab-nav {
+  display: flex;
+  gap: 0.2rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.22rem;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+.tab-btn {
+  flex: 1;
+  min-width: max-content;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.tab-btn:hover  { background: var(--border); color: var(--text); }
+.tab-btn.active { background: var(--accent-d); color: #fff; font-weight: 700; }
+
+.tab-panel         { display: none; }
+.tab-panel.active  { display: block; animation: fadeIn 0.3s ease; }
+@keyframes fadeIn  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* =====================================================================
+   DATA TABLES
+   ===================================================================== */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+table.dt { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+table.dt th {
+  background: rgba(56,189,248,.07);
+  padding: 0.6rem 0.9rem;
+  text-align: left;
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border-hi);
+  white-space: nowrap;
+}
+table.dt td { padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.dt tr:last-child td { border-bottom: none; }
+table.dt tr:hover td { background: var(--bg-hover); }
+table.dt tr.crit-row td { background: rgba(248,113,113,.04); }
+
+.crit-pill { display: inline-flex; align-items: center; padding: 0.1em 0.4em; background: rgba(248,113,113,.13); color: var(--red); border-radius: 4px; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; }
+.waiv-pill { display: inline-flex; align-items: center; padding: 0.1em 0.4em; background: rgba(167,139,250,.12); color: var(--purple); border-radius: 4px; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; }
+
+.phase-pre  { color: #94a3b8; }
+.phase-sub  { color: var(--accent); }
+.phase-post { color: var(--teal); }
+
+/* =====================================================================
+   LLM CONTENT — markdown rendered by marked.js
+   ===================================================================== */
+.llm {
+  font-size: 0.9rem;
+  line-height: 1.78;
+  color: var(--text);
+}
+.llm p                 { margin-bottom: 0.75rem; }
+.llm p:last-child      { margin-bottom: 0; }
+.llm h1, .llm h2, .llm h3, .llm h4 { margin: 1.2rem 0 0.55rem; line-height: 1.3; font-weight: 700; }
+.llm h1                { font-size: 1.1rem; color: var(--text);   border-bottom: 1px solid var(--border); padding-bottom: 0.45rem; }
+.llm h2                { font-size: 1rem;   color: var(--accent); }
+.llm h3                { font-size: 0.93rem; color: var(--teal); }
+.llm h4                { font-size: 0.88rem; color: var(--muted); }
+.llm ul, .llm ol       { margin-left: 1.5rem; margin-bottom: 0.75rem; }
+.llm li                { margin-bottom: 0.3rem; }
+.llm strong            { font-weight: 700; color: var(--text); }
+.llm em                { color: var(--muted); font-style: italic; }
+.llm code              { background: var(--border); color: var(--teal); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.84em; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+.llm pre               { background: #090b16; border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem; overflow-x: auto; margin-bottom: 0.75rem; }
+.llm pre code          { background: none; padding: 0; color: var(--text); }
+.llm blockquote        { border-left: 3px solid var(--accent); padding-left: 1rem; color: var(--muted); margin: 0.75rem 0; }
+
+/* LLM-generated tables — the key fix for feature 1 */
+.llm table             { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.84rem; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.llm th                { background: rgba(56,189,248,.08); padding: 0.55rem 0.9rem; text-align: left; font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); border-bottom: 1px solid var(--border-hi); }
+.llm td                { padding: 0.52rem 0.9rem; border-bottom: 1px solid var(--border); }
+.llm tr:last-child td  { border-bottom: none; }
+.llm tr:hover td       { background: var(--bg-hover); }
+
+/* =====================================================================
+   IP RADAR
+   ===================================================================== */
+.pat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.2rem; margin-bottom: 0.7rem; transition: border-color 0.2s; }
+.pat-card:hover { border-color: var(--border-hi); }
+.pat-card.red    { border-left: 3px solid var(--red); }
+.pat-card.yellow { border-left: 3px solid var(--amber); }
+.pat-card.green  { border-left: 3px solid var(--green); }
+
+.pat-hdr   { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.6rem; }
+.pat-num   { font-family: monospace; font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+.pat-title { font-size: 0.88rem; font-weight: 600; margin-bottom: 0.25rem; }
+.pat-meta  { font-size: 0.74rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.65rem; }
+.pat-expl  { font-size: 0.84rem; color: var(--muted); line-height: 1.65; background: rgba(0,0,0,.25); border-radius: 6px; padding: 0.55rem 0.85rem; }
+.claims-title { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--red); margin: 0.55rem 0 0.35rem; }
+.claim-item { font-size: 0.78rem; color: var(--muted); padding: 0.3rem 0.6rem; background: rgba(248,113,113,.05); border-left: 2px solid var(--red); border-radius: 4px; margin-bottom: 0.28rem; }
+
+/* =====================================================================
+   MATERIALS
+   ===================================================================== */
+.mat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.4rem 1.5rem;
+  margin-bottom: 1.2rem;
+}
+.mat-hdr { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.2rem; flex-wrap: wrap; }
+.mat-swap { display: flex; align-items: center; gap: 0.65rem; font-size: 0.95rem; font-weight: 600; }
+.m-chip { padding: 0.25rem 0.7rem; border-radius: 6px; font-family: monospace; font-size: 0.88rem; }
+.m-orig { background: rgba(248,113,113,.13); color: var(--red);   border: 1px solid rgba(248,113,113,.28); text-decoration: line-through; opacity: 0.75; }
+.m-sugg { background: rgba(52,211,153,.13);  color: var(--green); border: 1px solid rgba(52,211,153,.28); }
+.m-arrow { color: var(--muted); font-size: 1.2rem; }
+
+.sav-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.2rem; }
+.sav-box { background: rgba(52,211,153,.05); border: 1px solid rgba(52,211,153,.18); border-radius: 8px; padding: 0.75rem 1rem; text-align: center; }
+.sav-label { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 0.2rem; }
+.sav-val   { font-size: 1.15rem; font-weight: 800; color: var(--green); }
+
+/* Chart toggle button */
+.chart-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.9rem;
+  background: rgba(56,189,248,.08);
+  border: 1px solid rgba(56,189,248,.28);
+  border-radius: 6px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.79rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-bottom: 1rem;
+}
+.chart-btn:hover { background: rgba(56,189,248,.17); }
+
+.charts-wrap { display: none; }
+.charts-wrap.open { display: block; }
+.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.1rem; }
+@media (max-width: 580px) { .chart-row { grid-template-columns: 1fr; } }
+.chart-box { background: rgba(0,0,0,.25); border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem; }
+.chart-box canvas { max-height: 175px; }
+.chart-lbl { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 0.65rem; text-align: center; }
+
+.pred-impact { margin-top: 0.75rem; padding: 0.6rem 0.85rem; background: rgba(251,191,36,.07); border: 1px solid rgba(251,191,36,.22); border-radius: 6px; font-size: 0.84rem; color: var(--amber); }
+
+/* predicate list */
+.pred-item { display: flex; align-items: center; justify-content: space-between; padding: 0.48rem 0.75rem; background: rgba(0,0,0,.2); border-radius: 6px; margin-bottom: 0.3rem; font-size: 0.84rem; }
+.k-num { font-family: monospace; font-weight: 700; color: var(--accent); }
+
+/* parallel chips */
+.par-grp { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.4rem; }
+.par-chip { padding: 0.18em 0.55em; background: rgba(45,212,191,.08); border: 1px solid rgba(45,212,191,.22); border-radius: 4px; font-size: 0.74rem; font-family: monospace; color: var(--teal); }
+
+/* critical path chips */
+.cp-chip { display: inline-block; font-size: 0.73rem; font-family: monospace; background: rgba(248,113,113,.1); color: var(--red); padding: 0.15em 0.5em; border-radius: 4px; margin: 0.15rem 0; }
+
+/* =====================================================================
+   DISCLAIMER & MISC
+   ===================================================================== */
+.disclaimer { font-size: 0.73rem; color: var(--faint); background: rgba(0,0,0,.25); border: 1px solid var(--border); border-radius: 6px; padding: 0.7rem 0.9rem; margin-top: 1rem; line-height: 1.55; }
+
+.elapsed-tag { font-size: 0.72rem; color: var(--faint); font-family: monospace; }
+
+.warn-box { background: rgba(251,191,36,.07); border: 1px solid rgba(251,191,36,.28); border-radius: 8px; padding: 0.85rem 1.1rem; font-size: 0.84rem; color: var(--amber); margin-bottom: 1rem; }
+
+.empty-msg { text-align: center; padding: 2.5rem; color: var(--muted); font-size: 0.9rem; }
+
+/* =====================================================================
+   ERROR & RESET
+   ===================================================================== */
+#error-section { max-width: 520px; margin: 3rem auto; }
+.err-box { background: rgba(248,113,113,.07); border: 1px solid rgba(248,113,113,.28); border-radius: var(--radius); padding: 1.5rem; text-align: center; }
+.err-title { font-size: 1.1rem; font-weight: 700; color: var(--red); margin-bottom: 0.5rem; }
+.err-msg   { font-size: 0.88rem; color: var(--muted); line-height: 1.6; }
+
+#reset-btn {
+  display: block;
+  margin: 2rem auto 0;
+  padding: 0.6rem 1.7rem;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  border-radius: 8px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+#reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+#divider { height: 1px; background: var(--border); margin: 1.1rem 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">compl_AI</div>
+  <div class="tagline">FDA Regulatory &amp; IP Roadmap Generator</div>
+</header>
+
+<!-- ===== INPUT ===== -->
+<div id="input-section" class="container">
+  <p class="input-title">Describe your medical device or biotech product</p>
+  <textarea id="description" placeholder="Example: A resorbable cortical organoid scaffold made from PLGA intended for neural tissue engineering research. The device is implanted subdurally for up to 6 months to study neuroregeneration in rodent models before human trials."></textarea>
+  <div class="char-count"><span id="char-num">0</span> / 5000</div>
+  <div class="options-row">
+    <label class="opt-label"><input type="checkbox" id="run-ip" checked> Run IP Radar</label>
+    <label class="opt-label"><input type="checkbox" id="run-mat" checked> Materials Optimization</label>
+  </div>
+  <button id="submit-btn" onclick="handleSubmit()">Analyze →</button>
+</div>
+
+<!-- ===== LOADING ===== -->
+<div id="loading-section" style="display:none" class="container">
+  <div class="loading-header">
+    <div class="spinner-ring"></div>
+    <div class="loading-title">Running Analysis Pipeline</div>
+    <div class="loading-sub">This takes 45–90 seconds — real progress shown below</div>
+  </div>
+  <div class="progress-steps" id="progress-steps"></div>
+</div>
+
+<!-- ===== ERROR ===== -->
+<div id="error-section" style="display:none" class="container">
+  <div class="err-box">
+    <div class="err-title">Analysis Failed</div>
+    <div class="err-msg" id="err-msg"></div>
+  </div>
+  <button id="reset-btn" onclick="resetApp()">← Try Again</button>
+</div>
+
+<!-- ===== RESULTS ===== -->
+<div id="results-section" style="display:none" class="container">
+
+  <div class="tab-nav">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="roadmap">Testing Roadmap</button>
+    <button class="tab-btn" data-tab="ip">IP Radar</button>
+    <button class="tab-btn" data-tab="materials">Materials</button>
+  </div>
+
+  <div id="tab-overview"   class="tab-panel active"></div>
+  <div id="tab-roadmap"    class="tab-panel"></div>
+  <div id="tab-ip"         class="tab-panel"></div>
+  <div id="tab-materials"  class="tab-panel"></div>
+
+  <button id="reset-btn" onclick="resetApp()">← Analyze Another Product</button>
+</div>
+
+<!-- ===================================================================
+     JAVASCRIPT
+     =================================================================== -->
+<script>
+/* ---- Config ---- */
+const API_BASE = 'http://localhost:8000';
+
+/* ---- Global state ---- */
+let progressMap = {};   // stepName → { el, startTime }
+let chartStore  = {};   // chartId  → { data, instances }
+
+/* ---- marked.js configuration ---- */
+marked.setOptions({ gfm: true, breaks: true });
+
+/* ================================================================
+   UTILITIES
+   ================================================================ */
+function fmt(usd) {
+  if (usd >= 1e6) return '$' + (usd / 1e6).toFixed(1) + 'M';
+  if (usd >= 1e3) return '$' + Math.round(usd / 1e3) + 'k';
+  return '$' + usd;
+}
+
+function llm(text) {
+  if (!text) return '<em style="color:var(--muted)">No content available.</em>';
+  try { return marked.parse(String(text)); }
+  catch { return '<pre style="white-space:pre-wrap;color:var(--muted);">' + text + '</pre>'; }
+}
+
+function phaseLbl(p) {
+  return {
+    pre_submission: '<span class="phase-pre">Pre-submission</span>',
+    submission:     '<span class="phase-sub">Submission</span>',
+    post_market:    '<span class="phase-post">Post-market</span>',
+  }[p] || p;
+}
+
+function relBadge(r) {
+  if (r === 'red')    return '<span class="badge bg-red">⚠ High Risk</span>';
+  if (r === 'yellow') return '<span class="badge bg-amber">⚡ Review</span>';
+  return '<span class="badge bg-green">✓ Clear</span>';
+}
+
+/* ================================================================
+   SECTION VISIBILITY
+   ================================================================ */
+function show(id) {
+  ['input-section','loading-section','error-section','results-section']
+    .forEach(s => document.getElementById(s).style.display = (s === id ? '' : 'none'));
+}
+
+/* ================================================================
+   CHARACTER COUNT
+   ================================================================ */
+document.getElementById('description').addEventListener('input', function() {
+  const n = this.value.length;
+  const el = document.getElementById('char-num');
+  el.textContent = n;
+  el.parentElement.className = 'char-count' + (n > 4800 ? ' warn' : '');
+});
+
+/* ================================================================
+   PROGRESS UI
+   ================================================================ */
+const STEP_NAMES = {
+  classification: 'Classification Engine',
+  roadmap:        'Testing Roadmap Generator',
+  ip_radar:       'IP Radar',
+  materials:      'Smart Materials Engine',
+  complete:       'Pipeline Complete',
+};
+
+function getOrMakeStep(stepName) {
+  if (progressMap[stepName]) return progressMap[stepName].el;
+
+  const el = document.createElement('div');
+  el.className = 'p-step running';
+  el.innerHTML = `
+    <div class="p-icon"><div class="p-spinner"></div></div>
+    <div class="p-body">
+      <div class="p-name">${STEP_NAMES[stepName] || stepName}</div>
+      <div class="p-message">Starting…</div>
+    </div>`;
+
+  document.getElementById('progress-steps').appendChild(el);
+  progressMap[stepName] = { el, startTime: Date.now() };
+  return el;
+}
+
+function updateStep(stepName, message, status) {
+  const el = getOrMakeStep(stepName);
+  el.querySelector('.p-message').textContent = message;
+
+  const body = el.querySelector('.p-body');
+  el.className = 'p-step ' + (status === 'running' ? 'running' : status === 'done' ? 'done' : 'error');
+
+  const iconEl = el.querySelector('.p-icon');
+  if (status === 'done') {
+    iconEl.innerHTML = '<span class="p-check">✓</span>';
+    if (!body.querySelector('.p-elapsed')) {
+      const t = ((Date.now() - progressMap[stepName].startTime) / 1000).toFixed(1);
+      const d = document.createElement('div');
+      d.className = 'p-elapsed';
+      d.textContent = `Completed in ${t}s`;
+      body.appendChild(d);
+    }
+  } else if (status === 'error') {
+    iconEl.innerHTML = '<span class="p-x">✕</span>';
+  }
+}
+
+/* ================================================================
+   SUBMIT + STREAM
+   ================================================================ */
+async function handleSubmit() {
+  const desc = document.getElementById('description').value.trim();
+  if (desc.length < 50) {
+    alert('Please provide at least 50 characters describing your product.');
+    return;
+  }
+
+  progressMap = {};
+  chartStore  = {};
+  document.getElementById('progress-steps').innerHTML = '';
+  show('loading-section');
+
+  const body = JSON.stringify({
+    description: desc,
+    run_ip_radar: document.getElementById('run-ip').checked,
+    run_materials_optimization: document.getElementById('run-mat').checked,
+  });
+
+  try {
+    const res = await fetch(`${API_BASE}/analyze/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+      throw new Error(typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail));
+    }
+
+    await consumeStream(res);
+  } catch (err) {
+    showError(err.message || String(err));
+  }
+}
+
+async function consumeStream(res) {
+  const reader  = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buf += decoder.decode(value, { stream: true });
+
+    const chunks = buf.split('\n\n');
+    buf = chunks.pop() || '';
+
+    for (const chunk of chunks) {
+      if (!chunk.startsWith('data: ')) continue;
+      const raw = chunk.slice(6).trim();
+      if (!raw) continue;
+      try { handleEvent(JSON.parse(raw)); }
+      catch { /* malformed event — skip */ }
+    }
+  }
+}
+
+function handleEvent(ev) {
+  if (ev.type === 'progress') {
+    updateStep(ev.step, ev.message, ev.status || 'running');
+  } else if (ev.type === 'result') {
+    setTimeout(() => renderResults(ev.data), 350);
+  } else if (ev.type === 'error') {
+    showError(ev.message || 'An unknown error occurred.');
+  }
+}
+
+function showError(msg) {
+  document.getElementById('err-msg').textContent = msg;
+  show('error-section');
+}
+
+/* ================================================================
+   RESET
+   ================================================================ */
+function resetApp() {
+  Object.values(chartStore).forEach(s => {
+    if (s.costChart) s.costChart.destroy();
+    if (s.timeChart) s.timeChart.destroy();
+  });
+  chartStore  = {};
+  progressMap = {};
+
+  // Clear tab content
+  ['overview','roadmap','ip','materials'].forEach(t =>
+    document.getElementById(`tab-${t}`).innerHTML = '');
+
+  // Reset tabs
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab-btn[data-tab="overview"]').classList.add('active');
+  document.getElementById('tab-overview').classList.add('active');
+
+  show('input-section');
+}
+
+/* ================================================================
+   TAB SWITCHING
+   ================================================================ */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+  });
+});
+
+/* ================================================================
+   RESULTS RENDERING
+   ================================================================ */
+function renderResults(data) {
+  renderOverview(data);
+  renderRoadmap(data);
+  renderIPRadar(data);
+  renderMaterials(data);
+  show('results-section');
+}
+
+/* ---------- OVERVIEW ---------- */
+function renderOverview(data) {
+  const cls  = data.classification;
+  const prof = cls.product_profile;
+  const rm   = data.roadmap;
+  const el   = document.getElementById('tab-overview');
+  const cpct = Math.round(cls.confidence * 100);
+  const ccol = cls.confidence >= 0.8 ? 'var(--green)' : cls.confidence >= 0.6 ? 'var(--amber)' : 'var(--red)';
+
+  const profileRows = [
+    ['Product Category',  (cls.product_category || '').replace(/_/g, ' ')],
+    ['Mechanism of Action', (prof.mechanism_of_action || '').replace(/_/g, ' ')],
+    ['Contact Category',  (prof.contact_category  || '').replace(/_/g, ' ')],
+    ['Contact Duration',  (prof.contact_duration  || '').replace(/_/g, ' ')],
+    ['Materials',         (prof.materials || []).join(', ') || '—'],
+    ['Implantable',       prof.is_implantable ? 'Yes' : 'No'],
+  ];
+
+  el.innerHTML = `
+    <div class="grid-3" style="margin-bottom:1.1rem">
+      <div class="stat-card">
+        <div class="stat-label">Device Class</div>
+        <div class="stat-value">${cls.device_class}</div>
+        <div class="stat-sub">FDA Classification</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Regulatory Pathway</div>
+        <div class="stat-value" style="font-size:1rem">${cls.regulatory_pathway}</div>
+        <div class="stat-sub">Lead Center: ${cls.lead_center}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Confidence</div>
+        <div class="stat-value" style="color:${ccol}">${cpct}%</div>
+        <div class="conf-bar"><div class="conf-fill" style="width:${cpct}%"></div></div>
+      </div>
+    </div>
+
+    ${rm ? `
+    <div class="grid-2" style="margin-bottom:1.1rem">
+      <div class="stat-card">
+        <div class="stat-label">Total Testing Cost</div>
+        <div class="stat-value">${fmt(rm.total_cost_usd_low)} – ${fmt(rm.total_cost_usd_high)}</div>
+        <div class="stat-sub">${rm.tests.length} tests identified</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Timeline</div>
+        <div class="stat-value">${rm.total_weeks_low} – ${rm.total_weeks_high} wks</div>
+        <div class="stat-sub">Critical path: ${rm.critical_path.length} sequential tests</div>
+      </div>
+    </div>` : ''}
+
+    <div class="card">
+      <div class="card-title">Extracted Product Profile</div>
+      <div class="grid-2">
+        ${profileRows.map(([lbl, val]) => `
+          <div style="padding:.45rem 0;border-bottom:1px solid var(--border)">
+            <div style="font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)">${lbl}</div>
+            <div style="font-size:.87rem;margin-top:.18rem;text-transform:capitalize">${val || '—'}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    ${cls.low_confidence_warning ? `<div class="warn-box">⚠ ${cls.low_confidence_warning}</div>` : ''}
+
+    <div class="card">
+      <div class="card-title">Classification Rationale</div>
+      <div class="llm">${llm(cls.classification_rationale)}</div>
+    </div>
+
+    ${cls.combination_product_components?.length ? `
+    <div class="card">
+      <div class="card-title">Combination Product Components</div>
+      ${cls.combination_product_components.map(c =>
+        `<div style="padding:.4rem .7rem;background:rgba(56,189,248,.07);border-radius:6px;margin-bottom:.35rem;font-size:.85rem">${c}</div>`
+      ).join('')}
+    </div>` : ''}
+
+    ${cls.predicate_devices?.length ? `
+    <div class="card">
+      <div class="card-title">Predicate Devices (510(k))</div>
+      ${cls.predicate_devices.map(p => `
+        <div class="pred-item">
+          <div>
+            <span class="k-num">${p.k_number}</span>
+            <span style="margin-left:.65rem;font-size:.84rem">${p.device_name}</span>
+          </div>
+          <div style="text-align:right;font-size:.73rem;color:var(--muted)">
+            <div>${p.applicant}</div>
+            <div>${p.decision_date}</div>
+            <div>Sim: ${(p.similarity_score * 100).toFixed(0)}%</div>
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <div style="text-align:right;margin-top:.5rem">
+      <span class="elapsed-tag">Analysis completed in ${data.elapsed_seconds}s</span>
+    </div>`;
+}
+
+/* ---------- ROADMAP ---------- */
+function renderRoadmap(data) {
+  const rm = data.roadmap;
+  const el = document.getElementById('tab-roadmap');
+
+  if (!rm) {
+    el.innerHTML = '<div class="empty-msg">Roadmap generation failed or was not requested.</div>';
+    return;
+  }
+
+  const critSet = new Set(rm.critical_path || []);
+
+  el.innerHTML = `
+    <div class="grid-2" style="margin-bottom:1.1rem">
+      <div class="stat-card">
+        <div class="stat-label">Total Cost Estimate</div>
+        <div class="stat-value">${fmt(rm.total_cost_usd_low)} – ${fmt(rm.total_cost_usd_high)}</div>
+        <div class="stat-sub">Out-of-pocket; excludes overhead &amp; overhead</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Timeline</div>
+        <div class="stat-value">${rm.total_weeks_low} – ${rm.total_weeks_high} weeks</div>
+        <div class="stat-sub">${rm.tests.length} total tests</div>
+      </div>
+    </div>
+
+    ${rm.critical_path?.length ? `
+    <div class="card">
+      <div class="card-title">Critical Path (longest sequential chain)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:.3rem;align-items:center">
+        ${rm.critical_path.map((id, i) =>
+          `<span class="cp-chip">${id}</span>${i < rm.critical_path.length - 1 ? '<span style="color:var(--faint);font-size:.8rem">→</span>' : ''}`
+        ).join('')}
+      </div>
+    </div>` : ''}
+
+    ${rm.parallelization_opportunities?.length ? `
+    <div class="card">
+      <div class="card-title">Parallelization Opportunities</div>
+      ${rm.parallelization_opportunities.map((grp, i) => `
+        <div style="margin-bottom:.45rem">
+          <span style="font-size:.68rem;color:var(--muted);margin-right:.45rem">Group ${i+1}:</span>
+          <span class="par-grp" style="display:inline-flex">${grp.map(id => `<span class="par-chip">${id}</span>`).join('')}</span>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <div class="tbl-wrap">
+      <table class="dt">
+        <thead>
+          <tr>
+            <th>Test</th><th>Standard</th><th>Phase</th>
+            <th>Cost</th><th>Timeline</th><th>Flags</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rm.tests.map(t => `
+            <tr class="${critSet.has(t.id) ? 'crit-row' : ''}">
+              <td>
+                <div style="font-weight:600;font-size:.85rem">${t.name}</div>
+                <div style="font-size:.73rem;color:var(--muted);font-family:monospace;margin-top:.1rem">${t.id}</div>
+              </td>
+              <td style="font-size:.79rem;color:var(--muted);white-space:nowrap">${t.standard || '—'}</td>
+              <td>${phaseLbl(t.phase)}</td>
+              <td style="white-space:nowrap;font-size:.84rem">${fmt(t.estimated_cost_usd_low)} – ${fmt(t.estimated_cost_usd_high)}</td>
+              <td style="white-space:nowrap;font-size:.84rem">${t.estimated_weeks_low}–${t.estimated_weeks_high} wks</td>
+              <td>
+                ${critSet.has(t.id) ? '<span class="crit-pill">Critical</span> ' : ''}
+                ${t.waivable_with_existing_data ? `<span class="waiv-pill" title="${t.waiver_rationale || ''}">Waivable</span>` : ''}
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-top:1.1rem">
+      <div class="card-title">Data Gap Analysis</div>
+      <div class="llm">${llm(rm.data_gap_analysis)}</div>
+    </div>`;
+}
+
+/* ---------- IP RADAR ---------- */
+function renderIPRadar(data) {
+  const ip = data.ip_radar;
+  const el = document.getElementById('tab-ip');
+
+  if (!ip) {
+    el.innerHTML = '<div class="empty-msg">IP Radar was not run or failed.</div>';
+    return;
+  }
+
+  const red    = ip.patents.filter(p => p.relevance === 'red').length;
+  const yellow = ip.patents.filter(p => p.relevance === 'yellow').length;
+  const green  = ip.patents.filter(p => p.relevance === 'green').length;
+
+  el.innerHTML = `
+    <div class="grid-3" style="margin-bottom:1.1rem">
+      <div class="stat-card" style="border-color:rgba(248,113,113,.28)">
+        <div class="stat-label" style="color:var(--red)">High Risk</div>
+        <div class="stat-value" style="color:var(--red)">${red}</div>
+        <div class="stat-sub">Active, high overlap</div>
+      </div>
+      <div class="stat-card" style="border-color:rgba(251,191,36,.28)">
+        <div class="stat-label" style="color:var(--amber)">Review Needed</div>
+        <div class="stat-value" style="color:var(--amber)">${yellow}</div>
+        <div class="stat-sub">Possible overlap</div>
+      </div>
+      <div class="stat-card" style="border-color:rgba(52,211,153,.28)">
+        <div class="stat-label" style="color:var(--green)">Clear</div>
+        <div class="stat-value" style="color:var(--green)">${green}</div>
+        <div class="stat-sub">Expired or non-overlapping</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.1rem">
+      <div class="card-title">IP Landscape Summary</div>
+      <div class="llm">${llm(ip.summary)}</div>
+    </div>
+
+    ${ip.patents.map(p => `
+      <div class="pat-card ${p.relevance}">
+        <div class="pat-hdr">
+          <div>
+            <div class="pat-num">${p.patent_number}</div>
+            <div class="pat-title">${p.title}</div>
+          </div>
+          ${relBadge(p.relevance)}
+        </div>
+        <div class="pat-meta">
+          <span>👤 ${p.assignee || 'Unknown'}</span>
+          <span>📅 Filed: ${p.filing_date || 'N/A'}</span>
+          ${p.expiration_date ? `<span>⏱ Expires: ${p.expiration_date}</span>` : ''}
+          <span>${p.is_active ? '🔴 Active' : '✅ Expired'}</span>
+        </div>
+        <div class="pat-expl">${p.relevance_explanation}</div>
+        ${p.concerning_claims?.length ? `
+          <div class="claims-title">Concerning Claims</div>
+          ${p.concerning_claims.map(c => `<div class="claim-item">${c}</div>`).join('')}
+        ` : ''}
+      </div>`).join('')}
+
+    ${ip.search_queries_used?.length ? `
+    <div class="card" style="margin-top:.9rem">
+      <div class="card-title">Search Queries Used</div>
+      ${ip.search_queries_used.map(q =>
+        `<div style="font-size:.79rem;padding:.32rem 0;border-bottom:1px solid var(--border);color:var(--muted)">🔍 ${q}</div>`
+      ).join('')}
+    </div>` : ''}
+
+    <div class="disclaimer">${ip.disclaimer}</div>`;
+}
+
+/* ---------- MATERIALS ---------- */
+function renderMaterials(data) {
+  const mat = data.materials_optimization;
+  const rm  = data.roadmap;
+  const el  = document.getElementById('tab-materials');
+
+  if (!mat) {
+    el.innerHTML = '<div class="empty-msg">Materials optimization was not run or failed.</div>';
+    return;
+  }
+
+  const blCostLow  = rm?.total_cost_usd_low  || 0;
+  const blCostHigh = rm?.total_cost_usd_high || 0;
+  const blWkLow    = rm?.total_weeks_low     || 0;
+  const blWkHigh   = rm?.total_weeks_high    || 0;
+
+  if (!mat.recommendations?.length) {
+    el.innerHTML = `
+      <div class="card"><div class="card-title">Optimization Summary</div>
+        <div class="llm">${llm(mat.summary)}</div></div>
+      <div class="empty-msg">No material substitutions found that would reduce testing burden.<br>
+        Your current material selection appears optimal for this scope.</div>`;
+    return;
+  }
+
+  /* Pre-populate chartStore before setting innerHTML */
+  mat.recommendations.forEach((rec, i) => {
+    const cid = `matcrt-${i}`;
+    chartStore[cid] = {
+      blCostLow, blCostHigh,
+      optCostLow:  Math.max(0, blCostLow  - rec.net_cost_saved_usd_high),
+      optCostHigh: Math.max(0, blCostHigh - rec.net_cost_saved_usd_low),
+      blWkLow,  blWkHigh,
+      optWkLow:  Math.max(0, blWkLow  - rec.net_weeks_saved_high),
+      optWkHigh: Math.max(0, blWkHigh - rec.net_weeks_saved_low),
+      origLabel: rec.original_material,
+      suggLabel: rec.suggested_material,
+      costChart: null,
+      timeChart: null,
+    };
+  });
+
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:1.1rem">
+      <div class="card-title">Optimization Summary</div>
+      <div class="llm">${llm(mat.summary)}</div>
+    </div>
+
+    ${mat.recommendations.map((rec, i) => {
+      const cid = `matcrt-${i}`;
+      return `
+      <div class="mat-card">
+        <div class="mat-hdr">
+          <div class="mat-swap">
+            <span class="m-chip m-orig">${rec.original_material}</span>
+            <span class="m-arrow">→</span>
+            <span class="m-chip m-sugg">${rec.suggested_material}</span>
+          </div>
+          ${i === 0 ? '<span class="badge bg-teal">⭐ Best Recommendation</span>' : ''}
+        </div>
+
+        <div class="sav-grid">
+          <div class="sav-box">
+            <div class="sav-label">Cost Savings</div>
+            <div class="sav-val">${fmt(rec.net_cost_saved_usd_low)} – ${fmt(rec.net_cost_saved_usd_high)}</div>
+          </div>
+          <div class="sav-box">
+            <div class="sav-label">Time Savings</div>
+            <div class="sav-val">${rec.net_weeks_saved_low} – ${rec.net_weeks_saved_high} wks</div>
+          </div>
+        </div>
+
+        <!-- Chart toggle button (Feature 2) -->
+        <button class="chart-btn" data-cid="${cid}">
+          📊 Show Cost &amp; Timeline Comparison
+        </button>
+        <div class="charts-wrap" id="cw-${cid}">
+          <div class="chart-row">
+            <div class="chart-box">
+              <div class="chart-lbl">Cost Comparison (USD)</div>
+              <canvas id="cc-${cid}"></canvas>
+            </div>
+            <div class="chart-box">
+              <div class="chart-lbl">Timeline Comparison (Weeks)</div>
+              <canvas id="ct-${cid}"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:.9rem">
+          <div class="card-title">Rationale</div>
+          <div class="llm">${llm(rec.rationale)}</div>
+        </div>
+
+        <div class="grid-2">
+          <div>
+            <div class="card-title" style="color:var(--green);margin-bottom:.5rem">
+              Tests Eliminated (${rec.tests_eliminated?.length || 0})
+            </div>
+            ${rec.tests_eliminated?.length
+              ? rec.tests_eliminated.map(t => `
+                  <div style="padding:.38rem .6rem;background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.15);border-radius:6px;margin-bottom:.3rem;font-size:.8rem">
+                    <div style="font-weight:600">${t.name}</div>
+                    <div style="color:var(--muted);font-size:.73rem">${fmt(t.estimated_cost_usd_low)}–${fmt(t.estimated_cost_usd_high)} · ${t.estimated_weeks_low}–${t.estimated_weeks_high} wks</div>
+                  </div>`).join('')
+              : '<div style="color:var(--faint);font-size:.84rem">None</div>'}
+          </div>
+          <div>
+            <div class="card-title" style="color:var(--amber);margin-bottom:.5rem">
+              Tests Added (${rec.tests_added?.length || 0})
+            </div>
+            ${rec.tests_added?.length
+              ? rec.tests_added.map(t => `
+                  <div style="padding:.38rem .6rem;background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.15);border-radius:6px;margin-bottom:.3rem;font-size:.8rem">
+                    <div style="font-weight:600">${t.name}</div>
+                    <div style="color:var(--muted);font-size:.73rem">${fmt(t.estimated_cost_usd_low)}–${fmt(t.estimated_cost_usd_high)} · ${t.estimated_weeks_low}–${t.estimated_weeks_high} wks</div>
+                  </div>`).join('')
+              : '<div style="color:var(--faint);font-size:.84rem">None</div>'}
+          </div>
+        </div>
+
+        ${rec.predicate_impact
+          ? `<div class="pred-impact">⚠ Predicate Impact: ${rec.predicate_impact}</div>`
+          : ''}
+      </div>`;
+    }).join('')}`;
+
+  /* Bind chart toggle buttons after innerHTML is set */
+  el.querySelectorAll('.chart-btn').forEach(btn => {
+    btn.addEventListener('click', () => toggleCharts(btn.dataset.cid, btn));
+  });
+}
+
+/* ================================================================
+   CHART CREATION (Feature 2)
+   ================================================================ */
+
+/* Chart.js global defaults for dark theme */
+Chart.defaults.color           = '#8892a4';
+Chart.defaults.borderColor     = '#232644';
+Chart.defaults.backgroundColor = 'transparent';
+
+function toggleCharts(cid, btn) {
+  const wrap = document.getElementById(`cw-${cid}`);
+  const open = wrap.classList.toggle('open');
+  btn.textContent = open ? '📊 Hide Charts' : '📊 Show Cost & Timeline Comparison';
+
+  if (!open) return;
+
+  const s = chartStore[cid];
+  if (!s || s.costChart) return;   // already drawn
+
+  const blCostMid = (s.blCostLow  + s.blCostHigh)  / 2;
+  const optCostMid= (s.optCostLow + s.optCostHigh) / 2;
+  const blWkMid   = (s.blWkLow    + s.blWkHigh)    / 2;
+  const optWkMid  = (s.optWkLow   + s.optWkHigh)   / 2;
+
+  const sharedOpts = {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: { legend: { display: false } },
+  };
+
+  /* ---- Cost chart ---- */
+  const costCtx = document.getElementById(`cc-${cid}`)?.getContext('2d');
+  if (costCtx) {
+    s.costChart = new Chart(costCtx, {
+      type: 'bar',
+      data: {
+        labels: [s.origLabel, s.suggLabel],
+        datasets: [{
+          data: [blCostMid, optCostMid],
+          backgroundColor: ['rgba(248,113,113,.65)', 'rgba(52,211,153,.65)'],
+          borderColor:     ['rgba(248,113,113,1)',   'rgba(52,211,153,1)'],
+          borderWidth: 1,
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        ...sharedOpts,
+        plugins: {
+          ...sharedOpts.plugins,
+          tooltip: { callbacks: { label: ctx => {
+            const v = ctx.raw;
+            return v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : `$${Math.round(v/1000)}k`;
+          }}},
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: { color: 'rgba(255,255,255,.04)' },
+            ticks: { color: '#8892a4', callback: v => v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : `$${Math.round(v/1000)}k` },
+          },
+          x: { grid: { display: false }, ticks: { color: '#8892a4', font: { size: 11 } } },
+        },
+      },
+    });
+  }
+
+  /* ---- Timeline chart ---- */
+  const timeCtx = document.getElementById(`ct-${cid}`)?.getContext('2d');
+  if (timeCtx) {
+    s.timeChart = new Chart(timeCtx, {
+      type: 'bar',
+      data: {
+        labels: [s.origLabel, s.suggLabel],
+        datasets: [{
+          data: [blWkMid, optWkMid],
+          backgroundColor: ['rgba(248,113,113,.65)', 'rgba(56,189,248,.65)'],
+          borderColor:     ['rgba(248,113,113,1)',   'rgba(56,189,248,1)'],
+          borderWidth: 1,
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        ...sharedOpts,
+        plugins: {
+          ...sharedOpts.plugins,
+          tooltip: { callbacks: { label: ctx => `${ctx.raw.toFixed(1)} weeks` } },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: { color: 'rgba(255,255,255,.04)' },
+            ticks: { color: '#8892a4', callback: v => `${v} wks` },
+          },
+          x: { grid: { display: false }, ticks: { color: '#8892a4', font: { size: 11 } } },
+        },
+      },
+    });
+  }
+}
+</script>
+</body>
+</html>

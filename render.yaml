@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: compl-ai-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free            # change to "starter" or "standard" before real traffic
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false       # means you set this manually in the Render dashboard (never commit API keys)
+    healthCheckPath: /health
+    autoDeploy: true      # auto-redeploy on every push to main

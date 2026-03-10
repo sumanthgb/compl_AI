@@ -54,7 +54,7 @@ from utils.models import (
 
 logger = logging.getLogger(__name__)
 
-PATENTSVIEW_API = "https://api.patentsview.org/patents/query"
+PATENTSVIEW_API = "https://search.patentsview.org/api/v1/patent/"
 GOOGLE_PATENTS_API = "https://patents.googleapis.com/v1/patents"
 
 MAX_PATENTS_TO_ANALYZE = 8    # LLM calls are expensive; cap the deep analysis
@@ -123,25 +123,33 @@ def generate_search_queries(profile: ProductProfile) -> list[str]:
 
 def _search_patentsview(query: str, limit: int = 10) -> list[dict]:
     """
-    Query the PatentsView API (USPTO data).
-    PatentsView uses a JSON query syntax.
-
-    NEXT STEPS: Add field:patent_date filter to focus on patents filed
-    in the last 20 years (anything older is expired). Also filter by
-    CPC classification codes relevant to the device type.
+    Query the PatentsView Search API v1 (USPTO data).
+    New endpoint: https://search.patentsview.org/api/v1/patent/
+    Requires X-Api-Key header; key read from PATENTSVIEW_API_KEY env var.
     """
+    import os
+    api_key = os.getenv("PATENTSVIEW_API_KEY", "")
+    if not api_key:
+        logger.warning("PATENTSVIEW_API_KEY not set — skipping PatentsView search")
+        return []
+
     payload = {
         "q": {"_text_any": {"patent_abstract": query}},
         "f": [
-            "patent_number", "patent_title", "patent_abstract",
-            "assignee_organization", "patent_date", "app_date",
+            "patent_id", "patent_title", "patent_abstract",
+            "patent_date", "assignee_organization", "application_filing_date",
         ],
-        "o": {"per_page": limit},
+        "s": [{"patent_date": "desc"}],
+        "o": {"size": limit},
     }
 
     try:
         with httpx.Client(timeout=15.0) as client:
-            response = client.post(PATENTSVIEW_API, json=payload)
+            response = client.post(
+                PATENTSVIEW_API,
+                json=payload,
+                headers={"X-Api-Key": api_key},
+            )
             response.raise_for_status()
             data = response.json()
             return data.get("patents") or []
@@ -151,14 +159,20 @@ def _search_patentsview(query: str, limit: int = 10) -> list[dict]:
 
 
 def _normalize_patentsview_result(raw: dict) -> dict:
-    """Normalise PatentsView result into our common patent dict format."""
-    assignee_orgs = raw.get("assignees") or []
-    assignee = assignee_orgs[0].get("assignee_organization", "Unknown") if assignee_orgs else "Unknown"
+    """Normalise PatentsView Search API v1 result into our common patent dict format."""
+    # v1 API: assignee_organization is top-level or in nested assignees list
+    assignee = raw.get("assignee_organization") or ""
+    if not assignee:
+        assignees = raw.get("assignees") or []
+        assignee = assignees[0].get("assignee_organization", "Unknown") if assignees else "Unknown"
 
-    app_dates = raw.get("applications") or []
-    app_date = app_dates[0].get("app_date", "") if app_dates else ""
+    # filing_date may be top-level (application_filing_date) or nested
+    app_date = raw.get("application_filing_date") or ""
+    if not app_date:
+        apps = raw.get("applications") or []
+        app_date = apps[0].get("filing_date", "") if apps else ""
 
-    patent_date = raw.get("patent_date", "")
+    grant_date = raw.get("patent_date", "")
 
     # Rough expiration: 20 years from application date
     expiration = ""
@@ -169,12 +183,12 @@ def _normalize_patentsview_result(raw: dict) -> dict:
             pass
 
     return {
-        "patent_number": raw.get("patent_number", ""),
+        "patent_number": raw.get("patent_id", ""),
         "title": raw.get("patent_title", ""),
         "abstract": raw.get("patent_abstract", ""),
-        "assignee": assignee,
+        "assignee": assignee or "Unknown",
         "filing_date": app_date,
-        "grant_date": patent_date,
+        "grant_date": grant_date,
         "expiration_date": expiration,
         "source": "patentsview",
     }
@@ -363,15 +377,20 @@ def run_ip_radar(profile: ProductProfile) -> IPRadarResult:
     raw_patents = fetch_patents_for_queries(queries)
 
     if not raw_patents:
+        import os
+        has_key = bool(os.getenv("PATENTSVIEW_API_KEY", ""))
         logger.warning("No patents returned from search APIs")
         return IPRadarResult(
             product_profile=profile,
             patents=[],
             search_queries_used=queries,
             summary=(
-                "Patent searches returned no results. This may indicate an open IP space, "
-                "or it may reflect API limitations. Manual search on Google Patents and "
-                "USPTO Full-Text Database is recommended."
+                "Patent search returned no results. "
+                + ("" if has_key else
+                   "Note: PATENTSVIEW_API_KEY is not configured — "
+                   "set this environment variable to enable patent database search. ")
+                + "Manual search on Google Patents (patents.google.com) and "
+                "USPTO Full-Text Database (ppubs.uspto.gov) is recommended for a thorough IP review."
             ),
         )
 

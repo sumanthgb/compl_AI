@@ -43,7 +43,7 @@ import copy
 import logging
 from typing import Optional
 
-from utils.llm_client import call_llm
+from utils.llm_client import call_llm, call_llm_for_json
 from utils.models import (
     ClassificationResult,
     ContactCategory,

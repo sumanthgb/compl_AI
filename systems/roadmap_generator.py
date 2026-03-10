@@ -1146,24 +1146,34 @@ MASTER_TEST_LIBRARY: dict[str, dict] = {
 
 ESTABLISHED_BIOCOMPATIBLE_MATERIALS = {
     "peek", "polyether ether ketone",
+    "peek (polyether ether ketone)",                      # MATERIALS_KB name
     "ptfe", "polytetrafluoroethylene", "teflon",
+    "ptfe (polytetrafluoroethylene / teflon)",             # MATERIALS_KB name
     "uhmwpe", "ultra-high-molecular-weight polyethylene",
+    "uhmwpe (ultra-high-molecular-weight polyethylene)",   # MATERIALS_KB name
     "titanium", "ti-6al-4v", "ti-6al-4v eli", "cp titanium",
-    "316l stainless steel", "stainless steel 316l",
+    "titanium (ti-6al-4v eli / cp grade 4)",               # MATERIALS_KB name
+    "316l stainless steel", "stainless steel 316l", "316l stainless steel",
     "cobalt chrome", "cobalt-chromium", "cocr",
+    "cobalt-chromium alloy",                               # MATERIALS_KB name
     "medical grade silicone", "silicone", "pdms",
     "polyurethane", "polysulfone",
 }
 
 ESTABLISHED_IMPLANT_DATA_MATERIALS = {
     "peek", "polyether ether ketone",
+    "peek (polyether ether ketone)",                       # MATERIALS_KB name
     "titanium", "ti-6al-4v eli",
-    "uhmwpe", "cobalt chrome",
+    "titanium (ti-6al-4v eli / cp grade 4)",               # MATERIALS_KB name
+    "uhmwpe",
+    "uhmwpe (ultra-high-molecular-weight polyethylene)",   # MATERIALS_KB name
+    "cobalt chrome", "cobalt-chromium alloy",              # MATERIALS_KB name
 }
 
 USP_CLASS_VI_MATERIALS = {
     "medical grade silicone", "silicone",
     "ptfe", "polytetrafluoroethylene",
+    "ptfe (polytetrafluoroethylene / teflon)",             # MATERIALS_KB name
     "polysulfone", "polyurethane",
 }
 

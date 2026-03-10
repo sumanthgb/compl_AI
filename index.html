@@ -630,8 +630,8 @@ function updateStep(stepName, message, status) {
    ================================================================ */
 async function handleSubmit() {
   const desc = document.getElementById('description').value.trim();
-  if (desc.length < 50) {
-    alert('Please provide at least 50 characters describing your product.');
+  if (desc.length < 20) {
+    alert('Please provide at least 20 characters describing your product.');
     return;
   }
 

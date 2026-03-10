@@ -72,7 +72,7 @@ app.add_middleware(
 class AnalyzeRequest(BaseModel):
     description: str = Field(
         ...,
-        min_length=50,
+        min_length=20,
         max_length=5000,
         description="Plain-language description of the medical device or biotech product.",
         examples=[

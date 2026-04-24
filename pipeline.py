@@ -190,7 +190,7 @@ def run_full_pipeline(
 
     def run_ip_radar_task():
         try:
-            emit("ip_radar", "Searching USPTO patent database...")
+            emit("ip_radar", "Searching Lens.org patent database...")
             ip_result = run_ip_radar(result.classification.product_profile)
             red_count = sum(1 for p in ip_result.patents if p.relevance.value == "red")
             logger.info(

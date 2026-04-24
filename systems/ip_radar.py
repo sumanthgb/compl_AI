@@ -6,29 +6,29 @@ and returns plain-language relevance explanations with traffic-light ratings.
 
 Architecture:
   1. Generate diverse search queries from the product profile
-  2. Query USPTO PatentsView API and Google Patents Data API in parallel
+  2. Query Lens.org Patent Search API
   3. Deduplicate results
   4. Run each patent through an LLM relevance assessment
   5. Assign traffic-light flags and generate a plain-English IP landscape summary
+
+Data source: Lens.org (https://api.lens.org/patent/search)
+  - Requires a free API token from https://www.lens.org/lens/user/subscriptions
+  - Set the LENS_API_KEY environment variable with your Bearer token.
+  - Lens.org aggregates USPTO, EPO, WIPO, and other patent offices — broader
+    coverage than the former PatentsView/USPTO-only integration.
 
 THIS IS NOT A FREEDOM-TO-OPERATE (FTO) TOOL.
 This tool provides prior art radar to flag patents that should be reviewed
 by a registered patent attorney. It does not and cannot provide legal advice.
 
 NEXT STEPS:
-  - Add semantic patent search via Semantic Scholar or the
-    USPTO Patent Examination Data System (PEDS). These provide richer
-    structured data than the PatentsView API.
   - Add claim-level parsing: the current implementation uses patent abstracts.
     For production, fetch and parse the full claim text (independent claims
-    especially) for more accurate relevance scoring. The USPTO bulk data
-    provides XML claim text.
+    especially) for more accurate relevance scoring.
   - Add continuation/family tracking: flag when a patent has active
     continuations or divisionals, since those may have broader or different claims.
   - Add prosecution history lookup (file wrapper): knowing if a patent
     narrowed its claims during prosecution is critical for FTO analysis.
-  - For a premium tier, integrate with a commercial patent database
-    (Derwent, PatSnap, Lens.org) for better coverage and analytics.
   - Add a "design around" feature: given a flagged patent, ask the LLM
     to suggest product design modifications that might avoid the patent claims.
   - Add expiration date calculation: most patent APIs return filing/grant dates,
@@ -54,8 +54,7 @@ from utils.models import (
 
 logger = logging.getLogger(__name__)
 
-PATENTSVIEW_API = "https://search.patentsview.org/api/v1/patent/"
-GOOGLE_PATENTS_API = "https://patents.googleapis.com/v1/patents"
+LENS_API = "https://api.lens.org/patent/search"
 
 MAX_PATENTS_TO_ANALYZE = 8    # LLM calls are expensive; cap the deep analysis
 MAX_SEARCH_RESULTS = 15       # Raw results to fetch before LLM ranking
@@ -121,76 +120,99 @@ def generate_search_queries(profile: ProductProfile) -> list[str]:
 # Step 2: Patent fetching
 # ---------------------------------------------------------------------------
 
-def _search_patentsview(query: str, limit: int = 10) -> list[dict]:
+def _search_lens(query: str, limit: int = 10) -> list[dict]:
     """
-    Query the PatentsView Search API v1 (USPTO data).
-    New endpoint: https://search.patentsview.org/api/v1/patent/
-    Requires X-Api-Key header; key read from PATENTSVIEW_API_KEY env var.
+    Query the Lens.org Patent Search API.
+    Endpoint: https://api.lens.org/patent/search
+    Requires Bearer token in Authorization header; key read from LENS_API_KEY env var.
+    Free tokens available at https://www.lens.org/lens/user/subscriptions
     """
     import os
-    api_key = os.getenv("PATENTSVIEW_API_KEY", "")
+    api_key = os.getenv("LENS_API_KEY", "")
     if not api_key:
-        logger.warning("PATENTSVIEW_API_KEY not set — skipping PatentsView search")
+        logger.warning("LENS_API_KEY not set — skipping Lens.org patent search")
         return []
 
     payload = {
-        "q": {"_text_any": {"patent_abstract": query}},
-        "f": [
-            "patent_id", "patent_title", "patent_abstract",
-            "patent_date", "assignee_organization", "application_filing_date",
+        "query": {
+            "query_string": {
+                "query": query,
+                "fields": ["abstract"],
+            }
+        },
+        "include": [
+            "lens_id", "title", "abstract", "date_published",
+            "filing_date", "priority_date", "applicant", "owner",
         ],
-        "s": [{"patent_date": "desc"}],
-        "o": {"size": limit},
+        "size": limit,
+        "sort": [{"date_published": "desc"}],
     }
 
     try:
         with httpx.Client(timeout=15.0) as client:
             response = client.post(
-                PATENTSVIEW_API,
+                LENS_API,
                 json=payload,
-                headers={"X-Api-Key": api_key},
+                headers={"Authorization": f"Bearer {api_key}"},
             )
             response.raise_for_status()
             data = response.json()
-            return data.get("patents") or []
+            return data.get("data") or []
     except Exception as e:
-        logger.warning("PatentsView API error for query '%s': %s", query, e)
+        logger.warning("Lens.org API error for query '%s': %s", query, e)
         return []
 
 
-def _normalize_patentsview_result(raw: dict) -> dict:
-    """Normalise PatentsView Search API v1 result into our common patent dict format."""
-    # v1 API: assignee_organization is top-level or in nested assignees list
-    assignee = raw.get("assignee_organization") or ""
-    if not assignee:
-        assignees = raw.get("assignees") or []
-        assignee = assignees[0].get("assignee_organization", "Unknown") if assignees else "Unknown"
+def _extract_text_field(value) -> str:
+    """
+    Lens.org returns some fields (title, abstract) as either a plain string
+    or a list of localised objects: [{"lang": "en", "text": "..."}].
+    Safely extract the string in either case.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list) and value:
+        first = value[0]
+        if isinstance(first, dict):
+            return first.get("text", "")
+        if isinstance(first, str):
+            return first
+    return ""
 
-    # filing_date may be top-level (application_filing_date) or nested
-    app_date = raw.get("application_filing_date") or ""
-    if not app_date:
-        apps = raw.get("applications") or []
-        app_date = apps[0].get("filing_date", "") if apps else ""
 
-    grant_date = raw.get("patent_date", "")
+def _normalize_lens_result(raw: dict) -> dict:
+    """Normalise a Lens.org patent record into our common patent dict format."""
+    title = _extract_text_field(raw.get("title", ""))
+    abstract = _extract_text_field(raw.get("abstract", ""))
 
-    # Rough expiration: 20 years from application date
+    # Applicant name: prefer applicant list, fall back to owner
+    assignee = "Unknown"
+    for key in ("applicant", "owner"):
+        entries = raw.get(key) or []
+        if entries and isinstance(entries[0], dict):
+            assignee = entries[0].get("name", "Unknown") or "Unknown"
+            break
+
+    filing_date = raw.get("filing_date") or raw.get("priority_date", "")
+    grant_date = raw.get("date_published", "")
+
+    # Rough expiration: 20 years from filing date
     expiration = ""
-    if app_date and len(app_date) >= 4:
+    if filing_date and len(filing_date) >= 4:
         try:
-            expiration = str(int(app_date[:4]) + 20) + app_date[4:]
+            expiration = str(int(filing_date[:4]) + 20) + filing_date[4:]
         except ValueError:
             pass
 
     return {
-        "patent_number": raw.get("patent_id", ""),
-        "title": raw.get("patent_title", ""),
-        "abstract": raw.get("patent_abstract", ""),
-        "assignee": assignee or "Unknown",
-        "filing_date": app_date,
+        "patent_number": raw.get("lens_id", ""),
+        "title": title,
+        "abstract": abstract,
+        "assignee": assignee,
+        "filing_date": filing_date,
         "grant_date": grant_date,
         "expiration_date": expiration,
-        "source": "patentsview",
+        "source": "lens",
     }
 
 
@@ -202,9 +224,9 @@ def fetch_patents_for_queries(queries: list[str]) -> list[dict]:
     seen_numbers: set[str] = set()
 
     for query in queries:
-        raw_results = _search_patentsview(query, limit=MAX_SEARCH_RESULTS // len(queries) + 2)
+        raw_results = _search_lens(query, limit=MAX_SEARCH_RESULTS // len(queries) + 2)
         for raw in raw_results:
-            normalized = _normalize_patentsview_result(raw)
+            normalized = _normalize_lens_result(raw)
             num = normalized["patent_number"]
             if num and num not in seen_numbers:
                 seen_numbers.add(num)
@@ -378,7 +400,7 @@ def run_ip_radar(profile: ProductProfile) -> IPRadarResult:
 
     if not raw_patents:
         import os
-        has_key = bool(os.getenv("PATENTSVIEW_API_KEY", ""))
+        has_key = bool(os.getenv("LENS_API_KEY", ""))
         logger.warning("No patents returned from search APIs")
         return IPRadarResult(
             product_profile=profile,
@@ -387,8 +409,9 @@ def run_ip_radar(profile: ProductProfile) -> IPRadarResult:
             summary=(
                 "Patent search returned no results. "
                 + ("" if has_key else
-                   "Note: PATENTSVIEW_API_KEY is not configured — "
-                   "set this environment variable to enable patent database search. ")
+                   "Note: LENS_API_KEY is not configured — "
+                   "obtain a free token at https://www.lens.org/lens/user/subscriptions "
+                   "and set this environment variable to enable patent database search. ")
                 + "Manual search on Google Patents (patents.google.com) and "
                 "USPTO Full-Text Database (ppubs.uspto.gov) is recommended for a thorough IP review."
             ),

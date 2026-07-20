@@ -6,7 +6,7 @@ and returns plain-language relevance explanations with traffic-light ratings.
 
 Architecture:
   1. Generate diverse search queries from the product profile
-  2. Query Lens.org Patent Search API
+  2. Query Google Patents Public Datasets via BigQuery
   3. Deduplicate results
   4. Run each patent through an LLM relevance assessment
   5. Assign traffic-light flags and generate a plain-English IP landscape summary

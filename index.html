@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>compl_AI — FDA Regulatory Roadmap Generator</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <style>
@@ -912,8 +913,8 @@ function fmt(usd) {
 
 function llm(text) {
   if (!text) return '<em style="color:var(--muted)">No content available.</em>';
-  try { return marked.parse(String(text)); }
-  catch { return '<pre style="white-space:pre-wrap;color:var(--muted);">' + text + '</pre>'; }
+  try { return DOMPurify.sanitize(marked.parse(String(text))); }
+  catch { return '<pre style="white-space:pre-wrap;color:var(--muted);">' + escHtml(text) + '</pre>'; }
 }
 
 function phaseLbl(p) {
@@ -986,7 +987,7 @@ function openPaidModal(reason) {
   document.getElementById('paid-modal-usage').innerHTML = usage
     ? `Used <strong>${fmtGB(usage.used_bytes)}</strong> / ${fmtGB(usage.free_tier_bytes)} ` +
       `(${usage.percent_used.toFixed(1)}%) · ${fmtGB(usage.remaining_bytes)} remaining`
-    : (reason || 'BigQuery usage information unavailable.');
+    : escHtml(reason || 'BigQuery usage information unavailable.');
   document.getElementById('paid-modal').classList.add('open');
 }
 
@@ -1095,7 +1096,9 @@ function skipChat() {
 }
 
 function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function initChat() {
@@ -1322,7 +1325,7 @@ function renderOverview(data) {
     ['Mechanism of Action', (prof.mechanism_of_action || '').replace(/_/g, ' ')],
     ['Contact Category',  (prof.contact_category  || '').replace(/_/g, ' ')],
     ['Contact Duration',  (prof.contact_duration  || '').replace(/_/g, ' ')],
-    ['Materials',         (prof.materials || []).join(', ') || '—'],
+    ['Materials',         (prof.materials || []).map(escHtml).join(', ') || '—'],
     ['Implantable',       prof.is_implantable ? 'Yes' : 'No'],
   ];
 
@@ -1370,7 +1373,7 @@ function renderOverview(data) {
       </div>
     </div>
 
-    ${cls.low_confidence_warning ? `<div class="warn-box">⚠ ${cls.low_confidence_warning}</div>` : ''}
+    ${cls.low_confidence_warning ? `<div class="warn-box">⚠ ${escHtml(cls.low_confidence_warning)}</div>` : ''}
 
     <div class="card">
       <div class="card-title">Classification Rationale</div>
@@ -1381,7 +1384,7 @@ function renderOverview(data) {
     <div class="card">
       <div class="card-title">Combination Product Components</div>
       ${cls.combination_product_components.map(c =>
-        `<div style="padding:.4rem .7rem;background:rgba(56,189,248,.07);border-radius:6px;margin-bottom:.35rem;font-size:.85rem">${c}</div>`
+        `<div style="padding:.4rem .7rem;background:rgba(56,189,248,.07);border-radius:6px;margin-bottom:.35rem;font-size:.85rem">${escHtml(c)}</div>`
       ).join('')}
     </div>` : ''}
 
@@ -1391,12 +1394,12 @@ function renderOverview(data) {
       ${cls.predicate_devices.map(p => `
         <div class="pred-item">
           <div>
-            <span class="k-num">${p.k_number}</span>
-            <span style="margin-left:.65rem;font-size:.84rem">${p.device_name}</span>
+            <span class="k-num">${escHtml(p.k_number)}</span>
+            <span style="margin-left:.65rem;font-size:.84rem">${escHtml(p.device_name)}</span>
           </div>
           <div style="text-align:right;font-size:.73rem;color:var(--muted)">
-            <div>${p.applicant}</div>
-            <div>${p.decision_date}</div>
+            <div>${escHtml(p.applicant)}</div>
+            <div>${escHtml(p.decision_date)}</div>
             <div>Sim: ${(p.similarity_score * 100).toFixed(0)}%</div>
           </div>
         </div>`).join('')}
@@ -1438,7 +1441,7 @@ function renderRoadmap(data) {
       <div class="card-title">Critical Path (longest sequential chain)</div>
       <div style="display:flex;flex-wrap:wrap;gap:.3rem;align-items:center">
         ${rm.critical_path.map((id, i) =>
-          `<span class="cp-chip">${id}</span>${i < rm.critical_path.length - 1 ? '<span style="color:var(--faint);font-size:.8rem">→</span>' : ''}`
+          `<span class="cp-chip">${escHtml(id)}</span>${i < rm.critical_path.length - 1 ? '<span style="color:var(--faint);font-size:.8rem">→</span>' : ''}`
         ).join('')}
       </div>
     </div>` : ''}
@@ -1449,7 +1452,7 @@ function renderRoadmap(data) {
       ${rm.parallelization_opportunities.map((grp, i) => `
         <div style="margin-bottom:.45rem">
           <span style="font-size:.68rem;color:var(--muted);margin-right:.45rem">Group ${i+1}:</span>
-          <span class="par-grp" style="display:inline-flex">${grp.map(id => `<span class="par-chip">${id}</span>`).join('')}</span>
+          <span class="par-grp" style="display:inline-flex">${grp.map(id => `<span class="par-chip">${escHtml(id)}</span>`).join('')}</span>
         </div>`).join('')}
     </div>` : ''}
 
@@ -1465,16 +1468,16 @@ function renderRoadmap(data) {
           ${rm.tests.map(t => `
             <tr class="${critSet.has(t.id) ? 'crit-row' : ''}">
               <td>
-                <div style="font-weight:600;font-size:.85rem">${t.name}</div>
-                <div style="font-size:.73rem;color:var(--muted);font-family:monospace;margin-top:.1rem">${t.id}</div>
+                <div style="font-weight:600;font-size:.85rem">${escHtml(t.name)}</div>
+                <div style="font-size:.73rem;color:var(--muted);font-family:monospace;margin-top:.1rem">${escHtml(t.id)}</div>
               </td>
-              <td style="font-size:.79rem;color:var(--muted);white-space:nowrap">${t.standard || '—'}</td>
+              <td style="font-size:.79rem;color:var(--muted);white-space:nowrap">${escHtml(t.standard) || '—'}</td>
               <td>${phaseLbl(t.phase)}</td>
               <td style="white-space:nowrap;font-size:.84rem">${fmt(t.estimated_cost_usd_low)} – ${fmt(t.estimated_cost_usd_high)}</td>
               <td style="white-space:nowrap;font-size:.84rem">${t.estimated_weeks_low}–${t.estimated_weeks_high} wks</td>
               <td>
                 ${critSet.has(t.id) ? '<span class="crit-pill">Critical</span> ' : ''}
-                ${t.waivable_with_existing_data ? `<span class="waiv-pill" title="${t.waiver_rationale || ''}">Waivable</span>` : ''}
+                ${t.waivable_with_existing_data ? `<span class="waiv-pill" title="${escHtml(t.waiver_rationale || '')}">Waivable</span>` : ''}
               </td>
             </tr>`).join('')}
         </tbody>
@@ -1508,7 +1511,7 @@ function renderIPRadar(data) {
     el.innerHTML = `
       <div class="bq-skip-banner">
         <div class="bq-skip-title">⚠ Patent search skipped to protect the free tier</div>
-        <div class="bq-skip-msg">${ip.bigquery_skipped_reason}</div>
+        <div class="bq-skip-msg">${escHtml(ip.bigquery_skipped_reason)}</div>
         ${usageLine ? `<div class="bq-skip-msg">${usageLine}</div>` : ''}
         <div class="bq-skip-actions">
           <button class="bq-skip-btn primary" onclick="dismissPaidModal(true)">Retry &amp; pay for this scan</button>
@@ -1519,10 +1522,10 @@ function renderIPRadar(data) {
       <div class="card">
         <div class="card-title">Search Queries That Would Have Run</div>
         ${ip.search_queries_used.map(q =>
-          `<div style="font-size:.79rem;padding:.32rem 0;border-bottom:1px solid var(--border);color:var(--muted)">🔍 ${q}</div>`
+          `<div style="font-size:.79rem;padding:.32rem 0;border-bottom:1px solid var(--border);color:var(--muted)">🔍 ${escHtml(q)}</div>`
         ).join('')}
       </div>` : ''}
-      <div class="disclaimer">${ip.disclaimer}</div>`;
+      <div class="disclaimer">${escHtml(ip.disclaimer)}</div>`;
     return;
   }
 
@@ -1558,21 +1561,21 @@ function renderIPRadar(data) {
       <div class="pat-card ${p.relevance}">
         <div class="pat-hdr">
           <div>
-            <div class="pat-num">${p.patent_number}</div>
-            <div class="pat-title">${p.title}</div>
+            <div class="pat-num">${escHtml(p.patent_number)}</div>
+            <div class="pat-title">${escHtml(p.title)}</div>
           </div>
           ${relBadge(p.relevance)}
         </div>
         <div class="pat-meta">
-          <span>👤 ${p.assignee || 'Unknown'}</span>
-          <span>📅 Filed: ${p.filing_date || 'N/A'}</span>
-          ${p.expiration_date ? `<span>⏱ Expires: ${p.expiration_date}</span>` : ''}
+          <span>👤 ${escHtml(p.assignee) || 'Unknown'}</span>
+          <span>📅 Filed: ${escHtml(p.filing_date) || 'N/A'}</span>
+          ${p.expiration_date ? `<span>⏱ Expires: ${escHtml(p.expiration_date)}</span>` : ''}
           <span>${p.is_active ? '🔴 Active' : '✅ Expired'}</span>
         </div>
-        <div class="pat-expl">${p.relevance_explanation}</div>
+        <div class="pat-expl">${escHtml(p.relevance_explanation)}</div>
         ${p.concerning_claims?.length ? `
           <div class="claims-title">Concerning Claims</div>
-          ${p.concerning_claims.map(c => `<div class="claim-item">${c}</div>`).join('')}
+          ${p.concerning_claims.map(c => `<div class="claim-item">${escHtml(c)}</div>`).join('')}
         ` : ''}
       </div>`).join('')}
 
@@ -1580,11 +1583,11 @@ function renderIPRadar(data) {
     <div class="card" style="margin-top:.9rem">
       <div class="card-title">Search Queries Used</div>
       ${ip.search_queries_used.map(q =>
-        `<div style="font-size:.79rem;padding:.32rem 0;border-bottom:1px solid var(--border);color:var(--muted)">🔍 ${q}</div>`
+        `<div style="font-size:.79rem;padding:.32rem 0;border-bottom:1px solid var(--border);color:var(--muted)">🔍 ${escHtml(q)}</div>`
       ).join('')}
     </div>` : ''}
 
-    <div class="disclaimer">${ip.disclaimer}</div>`;
+    <div class="disclaimer">${escHtml(ip.disclaimer)}</div>`;
 }
 
 /* ---------- MATERIALS ---------- */
@@ -1645,9 +1648,9 @@ function renderMaterials(data) {
       <div class="mat-card">
         <div class="mat-hdr">
           <div class="mat-swap">
-            <span class="m-chip m-orig">${rec.original_material}</span>
+            <span class="m-chip m-orig">${escHtml(rec.original_material)}</span>
             <span class="m-arrow">→</span>
-            <span class="m-chip m-sugg">${rec.suggested_material}</span>
+            <span class="m-chip m-sugg">${escHtml(rec.suggested_material)}</span>
           </div>
           ${i === 0 ? '<span class="badge bg-teal">⭐ Best Recommendation</span>' : ''}
         </div>
@@ -1693,7 +1696,7 @@ function renderMaterials(data) {
             ${rec.tests_eliminated?.length
               ? rec.tests_eliminated.map(t => `
                   <div style="padding:.38rem .6rem;background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.15);border-radius:6px;margin-bottom:.3rem;font-size:.8rem">
-                    <div style="font-weight:600">${t.name}</div>
+                    <div style="font-weight:600">${escHtml(t.name)}</div>
                     <div style="color:var(--muted);font-size:.73rem">${fmt(t.estimated_cost_usd_low)}–${fmt(t.estimated_cost_usd_high)} · ${t.estimated_weeks_low}–${t.estimated_weeks_high} wks</div>
                   </div>`).join('')
               : '<div style="color:var(--faint);font-size:.84rem">None</div>'}
@@ -1705,7 +1708,7 @@ function renderMaterials(data) {
             ${rec.tests_added?.length
               ? rec.tests_added.map(t => `
                   <div style="padding:.38rem .6rem;background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.15);border-radius:6px;margin-bottom:.3rem;font-size:.8rem">
-                    <div style="font-weight:600">${t.name}</div>
+                    <div style="font-weight:600">${escHtml(t.name)}</div>
                     <div style="color:var(--muted);font-size:.73rem">${fmt(t.estimated_cost_usd_low)}–${fmt(t.estimated_cost_usd_high)} · ${t.estimated_weeks_low}–${t.estimated_weeks_high} wks</div>
                   </div>`).join('')
               : '<div style="color:var(--faint);font-size:.84rem">None</div>'}
@@ -1713,7 +1716,7 @@ function renderMaterials(data) {
         </div>
 
         ${rec.predicate_impact
-          ? `<div class="pred-impact">⚠ Predicate Impact: ${rec.predicate_impact}</div>`
+          ? `<div class="pred-impact">⚠ Predicate Impact: ${escHtml(rec.predicate_impact)}</div>`
           : ''}
       </div>`;
     }).join('')}`;

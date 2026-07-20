@@ -4,8 +4,24 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free            # change to "starter" or "standard" before real traffic
-    envVars:
-      - key: ANTHROPIC_API_KEY
-        sync: false       # means you set this manually in the Render dashboard (never commit API keys)
     healthCheckPath: /health
     autoDeploy: true      # auto-redeploy on every push to main
+
+    envVars:
+      # ---- Secrets (set the value in the Render dashboard — never commit) ----
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENFDA_API_KEY
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT      # e.g. complai-dev-503003
+        sync: false
+
+      # ---- GCP application-default credentials ----
+      # Render mounts secret files at /etc/secrets/<filename>. In the Render
+      # dashboard: Environment → Secret Files → add a file named
+      # `gcp-service-account.json` with the contents of a service-account key
+      # that has BigQuery Job User + BigQuery Data Viewer roles on the
+      # GOOGLE_CLOUD_PROJECT above. This env var tells the google-cloud SDK
+      # where to find it — no code change needed.
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/gcp-service-account.json

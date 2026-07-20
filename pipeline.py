@@ -94,6 +94,8 @@ class PipelineResult:
 def run_full_pipeline(
     raw_description: str,
     progress_callback: Optional[Callable[[dict], None]] = None,
+    *,
+    allow_paid_bigquery: bool = False,
 ) -> PipelineResult:
     """
     Execute all four systems in the correct order with parallelism where possible.
@@ -190,8 +192,11 @@ def run_full_pipeline(
 
     def run_ip_radar_task():
         try:
-            emit("ip_radar", "Searching Lens.org patent database...")
-            ip_result = run_ip_radar(result.classification.product_profile)
+            emit("ip_radar", "Searching Google Patents (BigQuery)...")
+            ip_result = run_ip_radar(
+                result.classification.product_profile,
+                allow_paid_bigquery=allow_paid_bigquery,
+            )
             red_count = sum(1 for p in ip_result.patents if p.relevance.value == "red")
             logger.info(
                 "[Pipeline] IP radar complete: %d patents, %d red flags",

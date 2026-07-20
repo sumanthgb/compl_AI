@@ -282,6 +282,16 @@ class PatentResult(BaseModel):
     concerning_claims: list[str]   # Specific claim language of concern
 
 
+class BigQueryUsage(BaseModel):
+    """Snapshot of BigQuery on-demand usage vs. the monthly free tier."""
+    used_bytes: int
+    remaining_bytes: int
+    free_tier_bytes: int          # Fixed 1 TiB; included so the frontend never has to hardcode it
+    percent_used: float           # 0.0–100.0
+    is_exhausted: bool            # used_bytes >= free_tier_bytes
+    would_incur_charges: bool     # next estimated query would push usage past free tier
+
+
 class IPRadarResult(BaseModel):
     product_profile: ProductProfile
     patents: list[PatentResult]
@@ -292,6 +302,8 @@ class IPRadarResult(BaseModel):
         "patent attorney before making IP-related business decisions."
     )
     summary: str   # Plain-English paragraph summarizing the IP landscape
+    bigquery_usage: Optional[BigQueryUsage] = None
+    bigquery_skipped_reason: Optional[str] = None   # populated when a search was skipped to protect the free tier
 
 
 # ---------------------------------------------------------------------------

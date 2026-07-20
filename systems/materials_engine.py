@@ -499,8 +499,13 @@ def optimize_materials(baseline_roadmap: RoadmapResult) -> MaterialsOptimization
                 net_cost_high,
             ) = _diff_roadmaps(baseline_roadmap, hypothetical_roadmap)
 
-            # Only recommend if there's a net positive benefit
-            if net_cost_low <= 0 and net_weeks_low <= 0:
+            # Only recommend swaps that never make things worse (no dimension
+            # ever regresses vs. baseline) and offer a real upside somewhere.
+            # Rejects trade-offs like "saves weeks but costs more" — the user
+            # is optimizing for regulatory burden, not risky bets.
+            if min(net_cost_low, net_cost_high, net_weeks_low, net_weeks_high) < 0:
+                continue
+            if max(net_cost_high, net_weeks_high) <= 0:
                 continue
 
             # Check predicate impact

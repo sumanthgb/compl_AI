@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 
 from pipeline import run_full_pipeline, PipelineResult
 from utils.llm_client import call_llm_chat
+from utils.models import BigQueryUsage
 
 # Load environment variables from .env file
 load_dotenv()
@@ -61,7 +62,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Restrict to your frontend domain in production
-    allow_credentials=True,
+    allow_credentials=False,  # Must be False when allow_origins=["*"] per CORS spec
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -90,11 +91,23 @@ class AnalyzeRequest(BaseModel):
         default=True,
         description="Whether to run materials optimization (adds ~10-20s to response time).",
     )
+    allow_paid_bigquery: bool = Field(
+        default=False,
+        description=(
+            "If true, allow the IP radar's BigQuery patent search to run even "
+            "when it would push usage past the 1 TiB monthly free tier (queries "
+            "past that point bill to your Google Cloud account at $6.25/TiB). "
+            "Default false: the search is skipped with a clear reason so the "
+            "user can decide whether to re-submit with this flag on."
+        ),
+    )
 
 
 class HealthResponse(BaseModel):
     status: str
     api_key_configured: bool
+    gcp_project_configured: bool
+    openfda_api_key_configured: bool
     version: str
 
 
@@ -111,6 +124,16 @@ class ChatResponse(BaseModel):
     reply: str
     ready: bool = False
     description: Optional[str] = None
+
+
+class BigQueryUsageResponse(BaseModel):
+    """Response shape for /bigquery/usage — always 200; `error` is set when
+    we couldn't read live usage, so a header widget can poll without any
+    special HTTP-status handling."""
+    configured: bool                        # GOOGLE_CLOUD_PROJECT is set
+    usage: Optional[BigQueryUsage] = None
+    error: Optional[str] = None
+    project_id: Optional[str] = None
 
 
 _CHAT_SYSTEM = """\
@@ -150,6 +173,8 @@ def health_check():
     return HealthResponse(
         status="ok",
         api_key_configured=bool(os.getenv("ANTHROPIC_API_KEY")),
+        gcp_project_configured=bool(os.getenv("GOOGLE_CLOUD_PROJECT")),
+        openfda_api_key_configured=bool(os.getenv("OPENFDA_API_KEY")),
         version="0.1.0",
     )
 
@@ -170,7 +195,10 @@ def analyze(request: AnalyzeRequest):
 
     logger.info("Received analyze request (description length=%d)", len(request.description))
 
-    result = run_full_pipeline(request.description)
+    result = run_full_pipeline(
+        request.description,
+        allow_paid_bigquery=request.allow_paid_bigquery,
+    )
 
     if not result.success:
         raise HTTPException(
@@ -226,6 +254,7 @@ async def analyze_stream(request: AnalyzeRequest):
             result = run_full_pipeline(
                 request.description,
                 progress_callback=progress_callback,
+                allow_paid_bigquery=request.allow_paid_bigquery,
             )
             if not result.success:
                 progress_q.put({
@@ -296,6 +325,63 @@ def classify_only(request: AnalyzeRequest):
     except Exception as e:
         logger.error("Classification failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/bigquery/usage", response_model=BigQueryUsageResponse)
+def bigquery_usage():
+    """
+    Return the current-month BigQuery on-demand usage against the 1 TiB
+    free tier. Cached 5 minutes server-side — safe to poll from a header
+    widget. Always returns HTTP 200; check `configured` and `error` fields
+    to distinguish the four possible states:
+      - configured=false, usage=null     → GCP not set up
+      - configured=true,  usage=null,
+                          error=<...>    → couldn't read usage
+      - configured=true,  usage=<...>    → live snapshot
+    """
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    if not project_id:
+        return BigQueryUsageResponse(
+            configured=False,
+            error="GOOGLE_CLOUD_PROJECT is not set — patent search is disabled.",
+        )
+
+    try:
+        from google.cloud import bigquery
+    except ImportError:
+        return BigQueryUsageResponse(
+            configured=True,
+            project_id=project_id,
+            error="google-cloud-bigquery is not installed on the server.",
+        )
+
+    from systems.ip_radar import _get_bigquery_usage_bytes, _build_usage_snapshot
+
+    try:
+        client = bigquery.Client(project=project_id)
+    except Exception as e:
+        return BigQueryUsageResponse(
+            configured=True,
+            project_id=project_id,
+            error=f"Could not create BigQuery client: {e}",
+        )
+
+    used = _get_bigquery_usage_bytes(client)
+    if used is None:
+        return BigQueryUsageResponse(
+            configured=True,
+            project_id=project_id,
+            error=(
+                "Could not read INFORMATION_SCHEMA.JOBS_BY_PROJECT — the "
+                "service account or user may be missing bigquery.jobs.listAll."
+            ),
+        )
+
+    return BigQueryUsageResponse(
+        configured=True,
+        project_id=project_id,
+        usage=_build_usage_snapshot(used),
+    )
 
 
 @app.post("/chat", response_model=ChatResponse)

@@ -605,6 +605,176 @@ table.dt tr.crit-row td { background: rgba(248,113,113,.04); }
 #reset-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 #divider { height: 1px; background: var(--border); margin: 1.1rem 0; }
+
+/* =====================================================================
+   BIGQUERY USAGE METER (fixed bottom-right)
+   ===================================================================== */
+#bq-meter {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  width: 240px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  z-index: 40;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  display: none;                     /* revealed only when we have data */
+}
+#bq-meter.warn  { border-color: rgba(251,191,36,.4); }
+#bq-meter.crit  { border-color: rgba(248,113,113,.5); }
+.bq-meter-hdr {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 0.35rem;
+}
+.bq-meter-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.65rem;
+  color: var(--text);
+}
+.bq-meter-pct { font-family: monospace; font-weight: 700; font-size: 0.72rem; color: var(--text); }
+#bq-meter.warn .bq-meter-pct { color: var(--amber); }
+#bq-meter.crit .bq-meter-pct { color: var(--red); }
+.bq-meter-bar {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.4rem;
+}
+.bq-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--amber), var(--red));
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+.bq-meter-detail { font-size: 0.7rem; color: var(--muted); }
+.bq-meter-detail strong { color: var(--text); font-weight: 600; }
+
+/* =====================================================================
+   MODAL (used for the paid-BigQuery opt-in choice)
+   ===================================================================== */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(4,6,15,.72);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+}
+.modal-backdrop.open { display: flex; }
+.modal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  max-width: 480px;
+  width: 100%;
+  padding: 1.6rem 1.7rem;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+}
+.modal-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  color: var(--amber);
+}
+.modal-body {
+  font-size: 0.87rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 1.25rem;
+}
+.modal-body strong { color: var(--text); }
+.modal-usage {
+  margin: 0.9rem 0;
+  padding: 0.65rem 0.9rem;
+  background: rgba(0,0,0,.25);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: monospace;
+}
+.modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.modal-btn {
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.modal-btn-secondary {
+  background: transparent;
+  border-color: var(--border-hi);
+  color: var(--muted);
+}
+.modal-btn-secondary:hover { color: var(--text); border-color: var(--muted); }
+.modal-btn-primary {
+  background: linear-gradient(135deg, var(--amber), #f59e0b);
+  color: #1a1200;
+  border: none;
+}
+.modal-btn-primary:hover { opacity: 0.9; }
+
+/* =====================================================================
+   IP RADAR — BUDGET-SKIP BANNER
+   ===================================================================== */
+.bq-skip-banner {
+  background: rgba(251,191,36,.06);
+  border: 1px solid rgba(251,191,36,.32);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius-lg);
+  padding: 1.2rem 1.4rem;
+  margin-bottom: 1.1rem;
+}
+.bq-skip-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--amber);
+  margin-bottom: 0.5rem;
+}
+.bq-skip-msg {
+  font-size: 0.86rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+.bq-skip-actions {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+.bq-skip-btn {
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-hi);
+  background: transparent;
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+.bq-skip-btn:hover { border-color: var(--amber); color: var(--amber); }
+.bq-skip-btn.primary {
+  background: linear-gradient(135deg, var(--amber), #f59e0b);
+  border: none;
+  color: #1a1200;
+}
+.bq-skip-btn.primary:hover { opacity: 0.9; }
 </style>
 </head>
 <body>
@@ -613,6 +783,34 @@ table.dt tr.crit-row td { background: rgba(248,113,113,.04); }
   <div class="logo">compl_AI</div>
   <div class="tagline">FDA Regulatory &amp; IP Roadmap Generator</div>
 </header>
+
+<!-- ===== BIGQUERY USAGE METER (fixed bottom-right) ===== -->
+<div id="bq-meter" role="status" aria-live="polite" title="Google BigQuery free-tier usage this month">
+  <div class="bq-meter-hdr">
+    <span class="bq-meter-title">BigQuery Free Tier</span>
+    <span class="bq-meter-pct" id="bq-meter-pct">—</span>
+  </div>
+  <div class="bq-meter-bar"><div class="bq-meter-fill" id="bq-meter-fill" style="width:0"></div></div>
+  <div class="bq-meter-detail" id="bq-meter-detail">Loading…</div>
+</div>
+
+<!-- ===== PAID-BIGQUERY OPT-IN MODAL ===== -->
+<div class="modal-backdrop" id="paid-modal" role="dialog" aria-modal="true" aria-labelledby="paid-modal-title">
+  <div class="modal-card">
+    <div class="modal-title" id="paid-modal-title">⚠ BigQuery free tier would be exceeded</div>
+    <div class="modal-body">
+      This month's BigQuery usage is close to (or past) the <strong>1 TiB free tier</strong>.
+      Running the patent search now will bill your Google Cloud account for the
+      excess bytes scanned at <strong>$6.25 per TiB</strong>.
+      A single run typically scans ~130&nbsp;GB.
+    </div>
+    <div class="modal-usage" id="paid-modal-usage">Loading current usage…</div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-secondary" onclick="dismissPaidModal(false)">Skip patent search</button>
+      <button class="modal-btn modal-btn-primary"   onclick="dismissPaidModal(true)">Continue &amp; pay</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===== CHAT ===== -->
 <div id="chat-section" class="container">
@@ -689,11 +887,16 @@ table.dt tr.crit-row td { background: rgba(248,113,113,.04); }
      =================================================================== -->
 <script>
 /* ---- Config ---- */
-const API_BASE = 'https://complai-bnjl.onrender.com';
+// Auto-detect: use local server when running from localhost, prod otherwise.
+const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? 'http://localhost:8000'
+  : 'https://complai-bnjl.onrender.com';
 
 /* ---- Global state ---- */
 let progressMap = {};   // stepName → { el, startTime }
 let chartStore  = {};   // chartId  → { data, instances }
+let lastAnalyzeRequest = null;   // remembered so we can re-submit with allow_paid_bigquery=true
+let latestBQUsage = null;        // last snapshot from /bigquery/usage or a pipeline response
 
 /* ---- marked.js configuration ---- */
 marked.setOptions({ gfm: true, breaks: true });
@@ -725,6 +928,74 @@ function relBadge(r) {
   if (r === 'red')    return '<span class="badge bg-red">⚠ High Risk</span>';
   if (r === 'yellow') return '<span class="badge bg-amber">⚡ Review</span>';
   return '<span class="badge bg-green">✓ Clear</span>';
+}
+
+function fmtGB(bytes) {
+  if (bytes == null) return '—';
+  if (bytes >= 1024**4) return (bytes / 1024**4).toFixed(2) + ' TiB';
+  if (bytes >= 1e9)     return (bytes / 1e9).toFixed(1)  + ' GB';
+  if (bytes >= 1e6)     return (bytes / 1e6).toFixed(1)  + ' MB';
+  return bytes + ' B';
+}
+
+/* ================================================================
+   BIGQUERY USAGE METER
+   ================================================================ */
+function paintBQMeter(usage) {
+  latestBQUsage = usage;
+  const el      = document.getElementById('bq-meter');
+  if (!usage) { el.style.display = 'none'; return; }
+
+  const pct  = Math.min(100, Math.round(usage.percent_used));
+  const fill = document.getElementById('bq-meter-fill');
+  const pctEl = document.getElementById('bq-meter-pct');
+  const detail = document.getElementById('bq-meter-detail');
+
+  el.classList.remove('warn', 'crit');
+  if (usage.is_exhausted || pct >= 95)       el.classList.add('crit');
+  else if (usage.would_incur_charges)        el.classList.add('crit');
+  else if (pct >= 75)                        el.classList.add('warn');
+
+  fill.style.width = pct + '%';
+  pctEl.textContent = pct + '%';
+  detail.innerHTML =
+    `<strong>${fmtGB(usage.used_bytes)}</strong> of ${fmtGB(usage.free_tier_bytes)} used ` +
+    `· <strong>${fmtGB(usage.remaining_bytes)}</strong> left this month`;
+  el.style.display = 'block';
+}
+
+async function refreshBQMeter() {
+  try {
+    const res = await fetch(`${API_BASE}/bigquery/usage`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.configured && data.usage) paintBQMeter(data.usage);
+    else document.getElementById('bq-meter').style.display = 'none';
+  } catch { /* silent — meter is best-effort */ }
+}
+
+// Poll on load and every 5 minutes.
+window.addEventListener('DOMContentLoaded', refreshBQMeter);
+setInterval(refreshBQMeter, 5 * 60 * 1000);
+
+/* ================================================================
+   PAID-BIGQUERY OPT-IN MODAL
+   ================================================================ */
+function openPaidModal(reason) {
+  const usage = latestBQUsage;
+  document.getElementById('paid-modal-usage').innerHTML = usage
+    ? `Used <strong>${fmtGB(usage.used_bytes)}</strong> / ${fmtGB(usage.free_tier_bytes)} ` +
+      `(${usage.percent_used.toFixed(1)}%) · ${fmtGB(usage.remaining_bytes)} remaining`
+    : (reason || 'BigQuery usage information unavailable.');
+  document.getElementById('paid-modal').classList.add('open');
+}
+
+function dismissPaidModal(userConsentedToPay) {
+  document.getElementById('paid-modal').classList.remove('open');
+  if (!userConsentedToPay) return;
+  if (!lastAnalyzeRequest) return;
+  // Re-run the same analysis, this time with the paid flag on.
+  handleSubmit({ allow_paid_bigquery: true });
 }
 
 /* ================================================================
@@ -901,7 +1172,8 @@ function updateStep(stepName, message, status) {
 /* ================================================================
    SUBMIT + STREAM
    ================================================================ */
-async function handleSubmit() {
+async function handleSubmit(opts = {}) {
+  // opts.allow_paid_bigquery: set by the modal when the user opts into paid usage.
   const desc = document.getElementById('description').value.trim();
   if (desc.length < 20) {
     alert('Please provide at least 20 characters describing your product.');
@@ -913,11 +1185,14 @@ async function handleSubmit() {
   document.getElementById('progress-steps').innerHTML = '';
   show('loading-section');
 
-  const body = JSON.stringify({
+  const payload = {
     description: desc,
     run_ip_radar: document.getElementById('run-ip').checked,
     run_materials_optimization: document.getElementById('run-mat').checked,
-  });
+    allow_paid_bigquery: !!opts.allow_paid_bigquery,
+  };
+  lastAnalyzeRequest = payload;   // remembered for modal re-submit
+  const body = JSON.stringify(payload);
 
   try {
     const res = await fetch(`${API_BASE}/analyze/stream`, {
@@ -1017,11 +1292,20 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
    RESULTS RENDERING
    ================================================================ */
 function renderResults(data) {
+  // Update meter with the freshest usage snapshot returned by this run.
+  if (data.ip_radar?.bigquery_usage) paintBQMeter(data.ip_radar.bigquery_usage);
+
   renderOverview(data);
   renderRoadmap(data);
   renderIPRadar(data);
   renderMaterials(data);
   show('results-section');
+
+  // If BigQuery was budget-skipped, auto-surface the choice modal so the
+  // user doesn't have to hunt for it in the IP tab.
+  if (data.ip_radar?.bigquery_skipped_reason) {
+    openPaidModal(data.ip_radar.bigquery_skipped_reason);
+  }
 }
 
 /* ---------- OVERVIEW ---------- */
@@ -1210,6 +1494,35 @@ function renderIPRadar(data) {
 
   if (!ip) {
     el.innerHTML = '<div class="empty-msg">IP Radar was not run or failed.</div>';
+    return;
+  }
+
+  // Budget-gated skip: show a prominent banner with the choice, in addition
+  // to the auto-opened modal. The user can retry or dismiss here.
+  if (ip.bigquery_skipped_reason) {
+    const usage = ip.bigquery_usage;
+    const usageLine = usage
+      ? `Used <strong>${fmtGB(usage.used_bytes)}</strong> of ${fmtGB(usage.free_tier_bytes)} `
+        + `(${usage.percent_used.toFixed(1)}%). ${fmtGB(usage.remaining_bytes)} free-tier bytes remaining.`
+      : '';
+    el.innerHTML = `
+      <div class="bq-skip-banner">
+        <div class="bq-skip-title">⚠ Patent search skipped to protect the free tier</div>
+        <div class="bq-skip-msg">${ip.bigquery_skipped_reason}</div>
+        ${usageLine ? `<div class="bq-skip-msg">${usageLine}</div>` : ''}
+        <div class="bq-skip-actions">
+          <button class="bq-skip-btn primary" onclick="dismissPaidModal(true)">Retry &amp; pay for this scan</button>
+          <button class="bq-skip-btn" onclick="document.querySelector('.tab-btn[data-tab=&quot;overview&quot;]').click()">Continue without patent search</button>
+        </div>
+      </div>
+      ${ip.search_queries_used?.length ? `
+      <div class="card">
+        <div class="card-title">Search Queries That Would Have Run</div>
+        ${ip.search_queries_used.map(q =>
+          `<div style="font-size:.79rem;padding:.32rem 0;border-bottom:1px solid var(--border);color:var(--muted)">🔍 ${q}</div>`
+        ).join('')}
+      </div>` : ''}
+      <div class="disclaimer">${ip.disclaimer}</div>`;
     return;
   }
 

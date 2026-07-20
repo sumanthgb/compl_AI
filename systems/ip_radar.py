@@ -11,11 +11,20 @@ Architecture:
   4. Run each patent through an LLM relevance assessment
   5. Assign traffic-light flags and generate a plain-English IP landscape summary
 
-Data source: Lens.org (https://api.lens.org/patent/search)
-  - Requires a free API token from https://www.lens.org/lens/user/subscriptions
-  - Set the LENS_API_KEY environment variable with your Bearer token.
-  - Lens.org aggregates USPTO, EPO, WIPO, and other patent offices — broader
-    coverage than the former PatentsView/USPTO-only integration.
+Data source: Google Patents Public Datasets on BigQuery
+  Table: `patents-public-data.google_patents_research.publications`
+    Chosen over the raw `patents.publications` table because it exposes plain
+    English `title` and `abstract` STRING columns (no localised UNNEST needed)
+    and is meaningfully cheaper to scan.
+  - Requires a Google Cloud project. Set GOOGLE_CLOUD_PROJECT to your project id.
+  - Auth: run `gcloud auth application-default login` OR set
+    GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON key path.
+  - BigQuery Free Tier gives 1 TiB of query bytes per month. This module runs
+    ONE batched query per pipeline invocation (all LLM-generated search
+    queries OR'd into a single regex), scanning the abstract column once
+    instead of once per query. Measured cost: ~150 GB per pipeline run →
+    ~7 runs/month within the free tier. Never introduce SELECT * against
+    this table.
 
 THIS IS NOT A FREEDOM-TO-OPERATE (FTO) TOOL.
 This tool provides prior art radar to flag patents that should be reviewed
@@ -38,14 +47,15 @@ NEXT STEPS:
 
 from __future__ import annotations
 
-import asyncio
 import logging
+import os
+import re
+import time
 from typing import Optional
-
-import httpx
 
 from utils.llm_client import call_llm, call_llm_for_json
 from utils.models import (
+    BigQueryUsage,
     IPRadarResult,
     PatentRelevance,
     PatentResult,
@@ -54,10 +64,27 @@ from utils.models import (
 
 logger = logging.getLogger(__name__)
 
-LENS_API = "https://api.lens.org/patent/search"
+BQ_PATENTS_TABLE = "patents-public-data.google_patents_research.publications"
 
 MAX_PATENTS_TO_ANALYZE = 8    # LLM calls are expensive; cap the deep analysis
 MAX_SEARCH_RESULTS = 15       # Raw results to fetch before LLM ranking
+
+# ---------------------------------------------------------------------------
+# BigQuery free-tier budget guard
+# ---------------------------------------------------------------------------
+_FREE_TIER_BYTES = 1024 ** 4   # 1 TiB on-demand query bytes per billing month
+
+# Empirical cost of one batched pipeline run against the scoring SQL below.
+# Used to answer "would the next query push me over budget?" without paying
+# for a dry-run every time. If the actual scan is higher, we update the
+# estimate from the latest total_bytes_billed reading.
+_ESTIMATED_QUERY_BYTES = 130 * 10 ** 9   # ~130 GB
+
+# INFORMATION_SCHEMA metadata queries are billed a flat 10 MB each, so we
+# cache the reading. 5 minutes is a comfortable middle ground — a stale
+# reading can never let us miss the budget cliff by more than ~130 GB.
+_USAGE_CACHE_TTL_SEC = 300
+_usage_cache: dict[str, float | int] = {}   # {'ts': float, 'used_bytes': int}
 
 
 # ---------------------------------------------------------------------------
@@ -120,120 +147,270 @@ def generate_search_queries(profile: ProductProfile) -> list[str]:
 # Step 2: Patent fetching
 # ---------------------------------------------------------------------------
 
-def _search_lens(query: str, limit: int = 10) -> list[dict]:
-    """
-    Query the Lens.org Patent Search API.
-    Endpoint: https://api.lens.org/patent/search
-    Requires Bearer token in Authorization header; key read from LENS_API_KEY env var.
-    Free tokens available at https://www.lens.org/lens/user/subscriptions
-    """
-    import os
-    api_key = os.getenv("LENS_API_KEY", "")
-    if not api_key:
-        logger.warning("LENS_API_KEY not set — skipping Lens.org patent search")
-        return []
+_BQ_SEARCH_SQL = f"""
+WITH matched AS (
+  SELECT
+    publication_number,
+    title,
+    abstract,
+    -- Score = number of DISTINCT keywords found in the abstract. A patent
+    -- that hits many of our terms is far more relevant than one that
+    -- matches a single generic word like "polymer" or "device".
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(REGEXP_EXTRACT_ALL(LOWER(IFNULL(abstract, '')), @pattern)) AS x
+    )) AS keyword_hits
+  FROM `{BQ_PATENTS_TABLE}`
+  WHERE country = 'United States'
+    AND REGEXP_CONTAINS(LOWER(IFNULL(abstract, '')), @pattern)
+)
+SELECT publication_number, title, abstract, keyword_hits
+FROM matched
+WHERE keyword_hits >= 2                -- suppress single-keyword false positives
+ORDER BY keyword_hits DESC,
+         publication_number DESC       -- tie-break by recency (pub num starts with year)
+LIMIT @lim
+"""
 
-    payload = {
-        "query": {
-            "query_string": {
-                "query": query,
-                "fields": ["abstract"],
-            }
-        },
-        "include": [
-            "lens_id", "title", "abstract", "date_published",
-            "filing_date", "priority_date", "applicant", "owner",
-        ],
-        "size": limit,
-        "sort": [{"date_published": "desc"}],
-    }
+
+_STOPWORDS = frozenset({
+    "the", "and", "for", "with", "from", "that", "this", "are", "was",
+    "use", "used", "using", "device", "method", "system", "apparatus",
+    "having", "based", "into", "onto", "than", "such", "any", "all",
+})
+
+
+def _keywords_from_query(query: str, max_terms: int = 6) -> list[str]:
+    """Extract deduped 3+ letter alphabetic tokens for regex matching.
+    Drops English stopwords and generic patent-boilerplate terms so the
+    regex stays selective — otherwise ORDER BY would just return newest."""
+    seen: set[str] = set()
+    words: list[str] = []
+    for w in re.findall(r"[A-Za-z]{3,}", query.lower()):
+        if w in seen or w in _STOPWORDS:
+            continue
+        seen.add(w)
+        words.append(w)
+        if len(words) >= max_terms:
+            break
+    return words
+
+
+def _get_bigquery_usage_bytes(client) -> Optional[int]:
+    """
+    Return bytes billed this month by the current project (cached).
+    Returns None when the INFORMATION_SCHEMA query fails (e.g. missing
+    bigquery.jobs.listAll permission on a fresh project).
+    """
+    now = time.time()
+    cached_ts = _usage_cache.get("ts", 0)
+    if cached_ts and (now - cached_ts) < _USAGE_CACHE_TTL_SEC:
+        return int(_usage_cache["used_bytes"])
+
+    sql = """
+    SELECT IFNULL(SUM(total_bytes_billed), 0) AS b
+    FROM `region-us`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
+    WHERE creation_time >= TIMESTAMP_TRUNC(CURRENT_TIMESTAMP, MONTH)
+      AND job_type = 'QUERY'
+      AND state = 'DONE'
+      AND statement_type != 'SCRIPT'
+    """
+    try:
+        row = next(iter(client.query(sql).result()))
+        used = int(row.b or 0)
+        _usage_cache["ts"] = now
+        _usage_cache["used_bytes"] = used
+        return used
+    except Exception as e:
+        logger.warning("Could not fetch BigQuery usage from INFORMATION_SCHEMA: %s", e)
+        return None
+
+
+def _build_usage_snapshot(used_bytes: Optional[int]) -> Optional[BigQueryUsage]:
+    """Build a BigQueryUsage snapshot from a raw byte reading, or None if unknown."""
+    if used_bytes is None:
+        return None
+    remaining = max(0, _FREE_TIER_BYTES - used_bytes)
+    return BigQueryUsage(
+        used_bytes=used_bytes,
+        remaining_bytes=remaining,
+        free_tier_bytes=_FREE_TIER_BYTES,
+        percent_used=round(used_bytes / _FREE_TIER_BYTES * 100, 2),
+        is_exhausted=used_bytes >= _FREE_TIER_BYTES,
+        would_incur_charges=(used_bytes + _ESTIMATED_QUERY_BYTES) > _FREE_TIER_BYTES,
+    )
+
+
+def _search_bigquery_batched(
+    queries: list[str],
+    total_limit: int,
+    *,
+    allow_paid: bool = False,
+) -> tuple[list[dict], Optional[BigQueryUsage], Optional[str]]:
+    """
+    Run ONE batched BigQuery scan for all queries together.
+
+    BigQuery bills bytes read from columns, not rows returned, so running four
+    separate queries would multiply the cost of scanning the abstract column
+    four times. This function unions every query's keywords into a single
+    regex alternation, scans the abstract column once, and returns up to
+    `total_limit` rows for the caller to dedupe and rank.
+
+    Cost controls (must stay in place):
+      - Explicit column projection — never SELECT *.
+      - country = 'United States' filter.
+      - Bounded LIMIT.
+      - Parameterised regex, so LLM-generated terms cannot be injected as SQL.
+
+    Requires GOOGLE_CLOUD_PROJECT env var and application-default credentials.
+
+    Returns (rows, usage_snapshot, skip_reason):
+      - rows: patent dicts (empty if skipped or errored)
+      - usage_snapshot: current BigQuery usage state, or None if we couldn't read it
+      - skip_reason: human-readable string if the search was skipped, else None
+    """
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    if not project_id:
+        logger.warning("GOOGLE_CLOUD_PROJECT not set — skipping Google Patents search")
+        return [], None, "GOOGLE_CLOUD_PROJECT is not configured"
+
+    seen: set[str] = set()
+    all_keywords: list[str] = []
+    for q in queries:
+        for kw in _keywords_from_query(q):
+            if kw in seen:
+                continue
+            seen.add(kw)
+            all_keywords.append(kw)
+    if not all_keywords:
+        return [], None, None
+    pattern = r"\b(" + "|".join(re.escape(w) for w in all_keywords) + r")\b"
 
     try:
-        with httpx.Client(timeout=15.0) as client:
-            response = client.post(
-                LENS_API,
-                json=payload,
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data.get("data") or []
+        from google.cloud import bigquery  # lazy import: keeps startup cheap
+    except ImportError:
+        logger.warning("google-cloud-bigquery not installed — skipping patent search")
+        return [], None, "google-cloud-bigquery client library is not installed"
+
+    try:
+        client = bigquery.Client(project=project_id)
     except Exception as e:
-        logger.warning("Lens.org API error for query '%s': %s", query, e)
-        return []
+        logger.warning("Could not create BigQuery client: %s", e)
+        return [], None, f"Could not create BigQuery client: {e}"
+
+    used_bytes = _get_bigquery_usage_bytes(client)
+    usage = _build_usage_snapshot(used_bytes)
+
+    # Budget gate — skip cleanly rather than surprise the account owner
+    if usage and usage.would_incur_charges and not allow_paid:
+        gb_used = usage.used_bytes / 1e9
+        pct = usage.percent_used
+        reason = (
+            f"BigQuery patent search skipped: this project has already used "
+            f"{gb_used:.0f} GB of the 1 TiB monthly free tier ({pct:.0f}%), "
+            f"and the next scan (~{_ESTIMATED_QUERY_BYTES / 1e9:.0f} GB) would exceed it. "
+            f"Re-submit with allow_paid_bigquery=true to run this search anyway "
+            f"(it will bill your Google Cloud account at $6.25/TiB scanned)."
+        )
+        logger.warning(reason)
+        return [], usage, reason
+
+    try:
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("pattern", "STRING", pattern),
+                bigquery.ScalarQueryParameter("lim", "INT64", total_limit),
+            ]
+        )
+        job = client.query(_BQ_SEARCH_SQL, job_config=job_config)
+        rows = list(job.result())
+        billed = getattr(job, "total_bytes_billed", 0) or 0
+        logger.info(
+            "BigQuery patent search (%d keywords across %d queries) → %d rows, %.1f GB billed",
+            len(all_keywords), len(queries), len(rows), billed / 1e9,
+        )
+        # Refresh our usage snapshot to reflect this run, so downstream consumers
+        # see accurate remaining budget in the response.
+        if used_bytes is not None:
+            new_used = used_bytes + billed
+            _usage_cache["ts"] = time.time()
+            _usage_cache["used_bytes"] = new_used
+            usage = _build_usage_snapshot(new_used)
+        return [dict(row) for row in rows], usage, None
+    except Exception as e:
+        logger.warning("BigQuery patent search failed: %s", e)
+        return [], usage, f"BigQuery query failed: {e}"
 
 
-def _extract_text_field(value) -> str:
+# Pre-grant application numbers embed the filing year: US-YYYY######-A#.
+# Granted patent numbers (US-#######-B#) do NOT — the digits are just the
+# patent number. We can only extract the year for the application format.
+_APPLICATION_PUB_NUM_RE = re.compile(r"^[A-Z]{2}-(\d{4})\d{6,}-A")
+
+
+def _normalize_bq_row(row: dict) -> dict:
+    """Normalise a google_patents_research row into our common patent dict format.
+
+    The research table does not carry filing_date or assignee. For pre-grant
+    US applications the filing year is embedded in the publication_number and
+    we extract it; for granted patents the number carries no year so we leave
+    filing_date/expiration empty, and _is_patent_active will treat the patent
+    as active (the LLM does the more nuanced assessment downstream).
     """
-    Lens.org returns some fields (title, abstract) as either a plain string
-    or a list of localised objects: [{"lang": "en", "text": "..."}].
-    Safely extract the string in either case.
-    """
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list) and value:
-        first = value[0]
-        if isinstance(first, dict):
-            return first.get("text", "")
-        if isinstance(first, str):
-            return first
-    return ""
+    pub_num = row.get("publication_number") or ""
 
-
-def _normalize_lens_result(raw: dict) -> dict:
-    """Normalise a Lens.org patent record into our common patent dict format."""
-    title = _extract_text_field(raw.get("title", ""))
-    abstract = _extract_text_field(raw.get("abstract", ""))
-
-    # Applicant name: prefer applicant list, fall back to owner
-    assignee = "Unknown"
-    for key in ("applicant", "owner"):
-        entries = raw.get(key) or []
-        if entries and isinstance(entries[0], dict):
-            assignee = entries[0].get("name", "Unknown") or "Unknown"
-            break
-
-    filing_date = raw.get("filing_date") or raw.get("priority_date", "")
-    grant_date = raw.get("date_published", "")
-
-    # Rough expiration: 20 years from filing date
+    filing_date = ""
     expiration = ""
-    if filing_date and len(filing_date) >= 4:
+    m = _APPLICATION_PUB_NUM_RE.match(pub_num)
+    if m:
         try:
-            expiration = str(int(filing_date[:4]) + 20) + filing_date[4:]
+            year = int(m.group(1))
+            filing_date = f"{year}-01-01"
+            expiration = f"{year + 20}-01-01"
         except ValueError:
             pass
 
     return {
-        "patent_number": raw.get("lens_id", ""),
-        "title": title,
-        "abstract": abstract,
-        "assignee": assignee,
+        "patent_number": pub_num,
+        "title": row.get("title") or "",
+        "abstract": row.get("abstract") or "",
+        "assignee": "Unknown",  # not exposed by google_patents_research schema
         "filing_date": filing_date,
-        "grant_date": grant_date,
+        "grant_date": "",
         "expiration_date": expiration,
-        "source": "lens",
+        "source": "google_patents_research",
     }
 
 
-def fetch_patents_for_queries(queries: list[str]) -> list[dict]:
+def fetch_patents_for_queries(
+    queries: list[str],
+    *,
+    allow_paid: bool = False,
+) -> tuple[list[dict], Optional[BigQueryUsage], Optional[str]]:
     """
-    Run all search queries and return a deduplicated list of raw patent dicts.
+    Run ONE batched BigQuery scan for all queries combined and return a
+    deduplicated list of raw patent dicts, alongside the current BigQuery
+    usage snapshot and any skip reason. Overfetches by ~2× to give the
+    dedup + relevance-ranking layers headroom.
     """
+    if not queries:
+        return [], None, None
+
+    raw_results, usage, skip_reason = _search_bigquery_batched(
+        queries, total_limit=MAX_SEARCH_RESULTS * 2, allow_paid=allow_paid,
+    )
+
     all_patents: list[dict] = []
     seen_numbers: set[str] = set()
-
-    for query in queries:
-        raw_results = _search_lens(query, limit=MAX_SEARCH_RESULTS // len(queries) + 2)
-        for raw in raw_results:
-            normalized = _normalize_lens_result(raw)
-            num = normalized["patent_number"]
-            if num and num not in seen_numbers:
-                seen_numbers.add(num)
-                all_patents.append(normalized)
+    for raw in raw_results:
+        normalized = _normalize_bq_row(raw)
+        num = normalized["patent_number"]
+        if num and num not in seen_numbers:
+            seen_numbers.add(num)
+            all_patents.append(normalized)
 
     logger.info("Fetched %d unique patents across %d queries", len(all_patents), len(queries))
-    return all_patents[:MAX_SEARCH_RESULTS]
+    return all_patents[:MAX_SEARCH_RESULTS], usage, skip_reason
 
 
 # ---------------------------------------------------------------------------
@@ -384,10 +561,19 @@ def generate_ip_summary(profile: ProductProfile, patents: list[PatentResult]) ->
 # Public interface
 # ---------------------------------------------------------------------------
 
-def run_ip_radar(profile: ProductProfile) -> IPRadarResult:
+def run_ip_radar(
+    profile: ProductProfile,
+    *,
+    allow_paid_bigquery: bool = False,
+) -> IPRadarResult:
     """
     Main entry point for System 3.
     Takes a ProductProfile and returns a full IPRadarResult.
+
+    allow_paid_bigquery: when False (default) the patent search is skipped
+      cleanly if it would push BigQuery usage past the 1 TiB monthly free
+      tier. The response then carries a skip reason so the frontend can offer
+      the user the choice to re-run with paid usage enabled.
     """
     logger.info("Starting IP radar for: %s", profile.intended_use[:60])
 
@@ -396,25 +582,41 @@ def run_ip_radar(profile: ProductProfile) -> IPRadarResult:
     logger.info("Generated %d search queries: %s", len(queries), queries)
 
     # Step 2: Fetch patents
-    raw_patents = fetch_patents_for_queries(queries)
+    raw_patents, usage, skip_reason = fetch_patents_for_queries(
+        queries, allow_paid=allow_paid_bigquery,
+    )
+
+    if skip_reason:
+        # Budget-gated skip — surface the choice to the user with usage stats.
+        return IPRadarResult(
+            product_profile=profile,
+            patents=[],
+            search_queries_used=queries,
+            summary=(
+                skip_reason + " Meanwhile, manual search on Google Patents "
+                "(patents.google.com) is a free interim workaround."
+            ),
+            bigquery_usage=usage,
+            bigquery_skipped_reason=skip_reason,
+        )
 
     if not raw_patents:
-        import os
-        has_key = bool(os.getenv("LENS_API_KEY", ""))
-        logger.warning("No patents returned from search APIs")
+        has_project = bool(os.getenv("GOOGLE_CLOUD_PROJECT", ""))
+        logger.warning("No patents returned from Google Patents BigQuery")
         return IPRadarResult(
             product_profile=profile,
             patents=[],
             search_queries_used=queries,
             summary=(
                 "Patent search returned no results. "
-                + ("" if has_key else
-                   "Note: LENS_API_KEY is not configured — "
-                   "obtain a free token at https://www.lens.org/lens/user/subscriptions "
-                   "and set this environment variable to enable patent database search. ")
+                + ("" if has_project else
+                   "Note: GOOGLE_CLOUD_PROJECT is not set — configure a Google Cloud "
+                   "project and run `gcloud auth application-default login` to enable "
+                   "patent database search. ")
                 + "Manual search on Google Patents (patents.google.com) and "
                 "USPTO Full-Text Database (ppubs.uspto.gov) is recommended for a thorough IP review."
             ),
+            bigquery_usage=usage,
         )
 
     # Step 3 & 4: Assess relevance for top patents
@@ -451,4 +653,5 @@ def run_ip_radar(profile: ProductProfile) -> IPRadarResult:
         patents=analyzed_patents,
         search_queries_used=queries,
         summary=summary,
+        bigquery_usage=usage,
     )

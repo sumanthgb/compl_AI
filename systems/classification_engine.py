@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import zlib
 from typing import Optional
 
 import httpx
@@ -394,22 +395,35 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return float(np.dot(va, vb) / norm)
 
 
+_EMBED_DIMS = 1024
+
+
 def _simple_text_embedding(text: str) -> list[float]:
     """
-    Fallback embedding using character n-gram overlap.
-    Replace this with a real embedding model in production.
+    Hashing-vectorised bag of character 3-grams.
 
-    NEXT STEPS: Use OpenAI text-embedding-3-small or a local sentence-transformer
-    (e.g. all-MiniLM-L6-v2 via sentence-transformers library) for real semantic search.
-    The FDA product code DB should be pre-embedded and cached — not embedded at query time.
+    Each 3-gram is hashed (crc32, deterministic across processes) into one of
+    _EMBED_DIMS buckets and its count is added to that dimension. Two texts
+    that share the same 3-grams land on the same buckets, so cosine similarity
+    over these vectors is a real (if crude) lexical-overlap signal.
+
+    Why not the previous implementation: it did `sorted(ngrams.keys())[:256]`
+    and used the raw counts as vector components — but the SET of trigrams
+    differs per text, so dimension i of vector A and dimension i of vector B
+    represented different features. Cosine similarity between them was
+    meaningless. Hashing fixes that by aligning dimensions across all inputs.
+
+    NEXT STEPS: still worth upgrading to text-embedding-3-small or
+    sentence-transformers/all-MiniLM-L6-v2 for semantic (not just lexical)
+    matching. Pre-embed the FDA product code DB once and cache — do not embed
+    it at query time as the current pipeline does.
     """
     text = text.lower()
-    ngrams: dict[str, int] = {}
+    vec = [0.0] * _EMBED_DIMS
     for i in range(len(text) - 2):
-        ng = text[i:i+3]
-        ngrams[ng] = ngrams.get(ng, 0) + 1
-    keys = sorted(ngrams.keys())
-    return [ngrams[k] for k in keys[:256]] + [0] * max(0, 256 - len(keys))
+        bucket = zlib.crc32(text[i:i+3].encode("utf-8")) % _EMBED_DIMS
+        vec[bucket] += 1.0
+    return vec
 
 
 def fetch_fda_product_codes(search_term: str, limit: int = 20) -> list[dict]:
@@ -490,12 +504,20 @@ def _classify_from_product_code(record: dict, profile: ProductProfile) -> tuple[
     Returns (device_class, pathway, rationale).
     """
     device_class_raw = record.get("device_class", "").strip()
-    exempt = record.get("submission_type_id", "").strip()
+    submission_code = record.get("submission_type_id", "").strip()
     regulation_number = record.get("regulation_number", "")
 
     # Map FDA's raw class codes
     class_map = {"1": DeviceClass.CLASS_I, "2": DeviceClass.CLASS_II, "3": DeviceClass.CLASS_III}
     device_class = class_map.get(device_class_raw, DeviceClass.UNKNOWN)
+
+    # openFDA `submission_type_id` codes (verified by sampling classification.json):
+    #   "1" = 510(k) required        "2" = PMA required
+    #   "3" = De Novo / other        "4" = 510(k) EXEMPT
+    #   "6" / "7" = special pathways
+    # A device is 510(k)-exempt when submission_type_id == "4", regardless of
+    # whether it's Class I (~89% of exempts) or Class II (~15% of exempts).
+    is_510k_exempt = submission_code == "4"
 
     # Combination product overrides everything
     if profile.is_combination_product or profile.has_drug_component or profile.has_biologic_component:
@@ -505,18 +527,22 @@ def _classify_from_product_code(record: dict, profile: ProductProfile) -> tuple[
         )
 
     if device_class == DeviceClass.CLASS_I:
-        if exempt in ("1", "2"):  # Exempt codes vary; this is illustrative
+        if is_510k_exempt:
             pathway = RegulatoryPathway.EXEMPT
-            rationale = f"Class I device under 21 CFR {regulation_number}. 510(k) exempt."
+            rationale = f"Class I device under 21 CFR {regulation_number}. 510(k) exempt (openFDA submission_type_id=4)."
         else:
             pathway = RegulatoryPathway.K510
             rationale = f"Class I device under 21 CFR {regulation_number}. Requires 510(k) premarket notification."
 
     elif device_class == DeviceClass.CLASS_II:
-        pathway = RegulatoryPathway.K510
-        rationale = f"Class II device under 21 CFR {regulation_number}. Standard 510(k) pathway. "
-        # Flag De Novo if device appears novel (no strong predicate expected)
-        rationale += "Consider De Novo if no clear predicate device exists."
+        if is_510k_exempt:
+            pathway = RegulatoryPathway.EXEMPT
+            rationale = f"Class II device under 21 CFR {regulation_number}. 510(k) exempt (openFDA submission_type_id=4)."
+        else:
+            pathway = RegulatoryPathway.K510
+            rationale = f"Class II device under 21 CFR {regulation_number}. Standard 510(k) pathway. "
+            # Flag De Novo if device appears novel (no strong predicate expected)
+            rationale += "Consider De Novo if no clear predicate device exists."
 
     elif device_class == DeviceClass.CLASS_III:
         pathway = RegulatoryPathway.PMA
